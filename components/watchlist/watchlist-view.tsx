@@ -5,15 +5,13 @@ import { Panel, PanelHeader } from "@/components/app/panel"
 import { useAuth } from "@/components/auth/auth-context"
 import { AISignalPill, TokenAvatar } from "@/components/primitives"
 import { buttonVariants } from "@/components/ui/button"
-import { aiSignal, assetNarrative, assets as allAssets, lastUpdatedLabel, type Asset, type AISignal } from "@/lib/data"
+import { aiSignal, assetNarrative, type AISignal, type Asset } from "@/lib/data"
 import { useWatchlist } from "@/lib/use-watchlist"
 import { cn } from "@/lib/utils"
-import { ArrowUpRight, Bookmark, Compass, Plus, Radar, Search, Trash2, TrendingDown, TrendingUp, X, Zap } from "lucide-react"
+import { ArrowUpRight, Bookmark, Compass, Loader2, Plus, Radar, Search, Trash2, TrendingDown, TrendingUp, X, Zap } from "lucide-react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { useMemo, useState } from "react"
-
-/* ---------- AI monitoring detection ---------- */
+import { useEffect, useMemo, useState } from "react"
 
 type ChangeType = "Signal Change" | "Narrative Shift" | "New Insight" | "Risk Flag"
 type DetectedChange = {
@@ -27,31 +25,89 @@ type DetectedChange = {
   time: string
 }
 
-// Derive detected changes for the tracked set from each asset's live signal + event.
-function detectChanges(tracked: Asset[]): DetectedChange[] {
-  return tracked.map((a) => {
-    const signal = aiSignal(a)
-    let type: ChangeType = "New Insight"
-    let text = a.event
-    if (a.signal === "Bullish") {
-      type = a.activity >= 80 ? "Signal Change" : "Narrative Shift"
-      text = `AI signal strengthened to Positive — ${a.event.toLowerCase()}`
-    } else if (a.signal === "Bearish") {
-      type = "Risk Flag"
-      text = `Flagged for review — ${a.event.toLowerCase()}`
-    } else {
-      type = "New Insight"
-      text = `${a.event}`
+type WatchlistSnapshot = {
+  price: number
+  change24h: number
+  activity: number
+  signal: Asset["signal"]
+  event: string
+  updatedAt: string
+}
+
+const SNAPSHOT_KEY = "coinnavigator.watchlist.snapshots"
+
+function readSnapshots(): Record<string, WatchlistSnapshot> {
+  if (typeof window === "undefined") return {}
+  try {
+    const raw = window.localStorage.getItem(SNAPSHOT_KEY)
+    return raw ? JSON.parse(raw) as Record<string, WatchlistSnapshot> : {}
+  } catch {
+    return {}
+  }
+}
+
+function writeSnapshots(assets: Asset[]) {
+  if (typeof window === "undefined") return
+  const current = readSnapshots()
+  const updatedAt = new Date().toISOString()
+  const next = { ...current }
+  for (const asset of assets) {
+    next[asset.id] = {
+      price: asset.price,
+      change24h: asset.change24h,
+      activity: asset.activity,
+      signal: asset.signal,
+      event: asset.event,
+      updatedAt,
     }
+  }
+  window.localStorage.setItem(SNAPSHOT_KEY, JSON.stringify(next))
+}
+
+function relativeTime(input?: string): string {
+  if (!input) return "Just now"
+  const diffMs = Date.now() - new Date(input).getTime()
+  const minutes = Math.max(0, Math.round(diffMs / 60_000))
+  if (minutes < 1) return "Just now"
+  if (minutes < 60) return `${minutes}m ago`
+  const hours = Math.round(minutes / 60)
+  if (hours < 24) return `${hours}h ago`
+  return `${Math.round(hours / 24)}d ago`
+}
+
+function detectChanges(tracked: Asset[], previous: Record<string, WatchlistSnapshot>): DetectedChange[] {
+  return tracked.map((asset) => {
+    const prev = previous[asset.id]
+    const signal = aiSignal(asset)
+    let type: ChangeType = "New Insight"
+    let text = asset.event
+
+    if (prev?.signal && prev.signal !== asset.signal) {
+      type = "Signal Change"
+      text = `AI signal changed from ${prev.signal} to ${asset.signal}. ${asset.event}`
+    } else if (prev && Math.abs(asset.change24h - prev.change24h) >= 3) {
+      type = asset.change24h > prev.change24h ? "Narrative Shift" : "Risk Flag"
+      text = `24h momentum moved from ${prev.change24h.toFixed(2)}% to ${asset.change24h.toFixed(2)}%.`
+    } else if (prev && Math.abs(asset.activity - prev.activity) >= 8) {
+      type = "Narrative Shift"
+      text = `Activity score changed from ${prev.activity} to ${asset.activity}. ${asset.event}`
+    } else if (asset.signal === "Bullish") {
+      type = asset.activity >= 80 ? "Signal Change" : "Narrative Shift"
+      text = `AI signal strengthened to Positive. ${asset.event}`
+    } else if (asset.signal === "Bearish") {
+      type = "Risk Flag"
+      text = `Flagged for review. ${asset.event}`
+    }
+
     return {
-      id: a.id,
-      symbol: a.symbol,
-      color: a.color,
-      assetName: a.name,
+      id: asset.id,
+      symbol: asset.symbol,
+      color: asset.color,
+      assetName: asset.name,
       type,
       signal,
       text,
-      time: lastUpdatedLabel(a),
+      time: relativeTime(prev?.updatedAt),
     }
   })
 }
@@ -68,14 +124,54 @@ export function WatchlistView() {
   const router = useRouter()
   const [addOpen, setAddOpen] = useState(false)
   const { assets: tracked, ready, addAsset, removeAsset } = useWatchlist()
+  const [liveTracked, setLiveTracked] = useState<Asset[]>(tracked)
+  const [previousSnapshots, setPreviousSnapshots] = useState<Record<string, WatchlistSnapshot>>({})
+  const [refreshing, setRefreshing] = useState(false)
+  const trackedIds = useMemo(() => new Set(tracked.map((asset) => asset.id)), [tracked])
+  const visibleTracked = useMemo(() => {
+    const filtered = liveTracked.filter((asset) => trackedIds.has(asset.id))
+    return filtered.length === tracked.length ? filtered : tracked
+  }, [liveTracked, tracked, trackedIds])
 
-  const changes = useMemo(() => detectChanges(tracked), [tracked])
+  useEffect(() => {
+    if (!tracked.length) return
 
+    let cancelled = false
+    async function refreshTrackedAssets() {
+      setRefreshing(true)
+      try {
+        const snapshots = readSnapshots()
+        const refreshed = await Promise.all(
+          tracked.map(async (asset) => {
+            const response = await fetch(`/api/market/search?q=${encodeURIComponent(asset.symbol || asset.id)}`)
+            if (!response.ok) return asset
+            const data = await response.json() as { assets: Asset[] }
+            return data.assets.find((item) => item.id === asset.id || item.symbol === asset.symbol) ?? data.assets[0] ?? asset
+          }),
+        )
+        if (!cancelled) {
+          setPreviousSnapshots(snapshots)
+          setLiveTracked(refreshed)
+          writeSnapshots(refreshed)
+        }
+      } catch {
+        if (!cancelled) setLiveTracked(tracked)
+      } finally {
+        if (!cancelled) setRefreshing(false)
+      }
+    }
+
+    void refreshTrackedAssets()
+    return () => {
+      cancelled = true
+    }
+  }, [tracked])
+
+  const changes = useMemo(() => detectChanges(visibleTracked, previousSnapshots), [visibleTracked, previousSnapshots])
   const openReport = (id: string) => requireWallet(() => router.push(`/research?asset=${id}`), "report")
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
-      {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-foreground">Asset Monitoring</h1>
@@ -117,12 +213,11 @@ export function WatchlistView() {
         />
       ) : (
         <div className="grid gap-6 lg:grid-cols-[1fr_340px]">
-          {/* Monitoring table */}
           <Panel className="min-w-0">
             <PanelHeader
               title="Tracked Assets"
               icon={Radar}
-              action={<span className="text-xs text-muted-foreground">{tracked.length} monitored</span>}
+              action={<span className="text-xs text-muted-foreground">{refreshing ? "Refreshing" : `${visibleTracked.length} monitored`}</span>}
             />
             <div className="overflow-x-auto">
               <table className="w-full min-w-[720px] border-collapse text-left">
@@ -133,53 +228,55 @@ export function WatchlistView() {
                     <th className="px-4 py-3 font-medium">Narrative</th>
                     <th className="px-4 py-3 font-medium">AI Signal</th>
                     <th className="px-4 py-3 font-medium">Latest Insight</th>
-                    <th className="px-4 py-3 font-medium whitespace-nowrap">Last Updated</th>
+                    <th className="whitespace-nowrap px-4 py-3 font-medium">Last Updated</th>
                     <th className="px-4 py-3" />
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
-                  {tracked.map((a) => (
-                    <tr key={a.id} className="group align-top transition-colors hover:bg-white/[0.02]">
+                  {visibleTracked.map((asset) => (
+                    <tr key={asset.id} className="group align-top transition-colors hover:bg-white/[0.02]">
                       <td className="px-4 py-4">
                         <div className="flex items-center gap-3">
-                          <TokenAvatar id={a.id} symbol={a.symbol} color={a.color} imageUrl={a.imageUrl} size={34} />
+                          <TokenAvatar id={asset.id} symbol={asset.symbol} color={asset.color} imageUrl={asset.imageUrl} size={34} />
                           <div className="min-w-0">
-                            <Link href={`/token/${a.id}`} className="block truncate text-sm font-medium text-foreground hover:text-primary">
-                              {a.name}
+                            <Link href={`/token/${asset.id}`} className="block truncate text-sm font-medium text-foreground hover:text-primary">
+                              {asset.name}
                             </Link>
-                            <span className="text-xs text-muted-foreground">{a.symbol}</span>
+                            <span className="text-xs text-muted-foreground">{asset.symbol}</span>
                           </div>
                         </div>
                       </td>
                       <td className="px-4 py-4">
                         <span className="rounded-md bg-surface px-2 py-0.5 text-[11px] font-medium text-muted-foreground ring-1 ring-border">
-                          {a.category}
+                          {asset.category}
                         </span>
                       </td>
                       <td className="px-4 py-4">
-                        <span className="text-sm text-foreground">{assetNarrative(a)}</span>
+                        <span className="text-sm text-foreground">{assetNarrative(asset)}</span>
                       </td>
                       <td className="px-4 py-4">
-                        <AISignalPill signal={aiSignal(a)} />
+                        <AISignalPill signal={aiSignal(asset)} />
                       </td>
                       <td className="max-w-[240px] px-4 py-4">
-                        <p className="text-xs leading-relaxed text-muted-foreground" title={a.event}>
-                          {a.event}
+                        <p className="text-xs leading-relaxed text-muted-foreground" title={asset.event}>
+                          {asset.event}
                         </p>
                       </td>
-                      <td className="whitespace-nowrap px-4 py-4 text-xs text-muted-foreground">{lastUpdatedLabel(a)}</td>
+                      <td className="whitespace-nowrap px-4 py-4 text-xs text-muted-foreground">
+                        {relativeTime(previousSnapshots[asset.id]?.updatedAt)}
+                      </td>
                       <td className="px-4 py-4">
                         <div className="flex items-center justify-end gap-1.5">
                           <button
-                            onClick={() => openReport(a.id)}
-                            aria-label={`View research for ${a.name}`}
+                            onClick={() => openReport(asset.id)}
+                            aria-label={`View research for ${asset.name}`}
                             className="inline-flex size-8 items-center justify-center rounded-lg border border-border bg-surface text-muted-foreground transition-colors hover:text-foreground"
                           >
                             <ArrowUpRight className="size-4" />
                           </button>
                           <button
-                            aria-label={`Stop tracking ${a.name}`}
-                            onClick={() => removeAsset(a.id)}
+                            aria-label={`Stop tracking ${asset.name}`}
+                            onClick={() => removeAsset(asset.id)}
                             className="inline-flex size-8 items-center justify-center rounded-lg text-muted-foreground opacity-0 transition-all hover:text-destructive group-hover:opacity-100"
                           >
                             <Trash2 className="size-4" />
@@ -193,7 +290,6 @@ export function WatchlistView() {
             </div>
           </Panel>
 
-          {/* AI Monitoring sidebar */}
           <Panel className="h-fit">
             <PanelHeader
               title="AI Monitoring"
@@ -206,22 +302,22 @@ export function WatchlistView() {
               </p>
             </div>
             <ol className="divide-y divide-border">
-              {changes.map((c) => {
-                const meta = changeMeta[c.type]
+              {changes.map((change) => {
+                const meta = changeMeta[change.type]
                 return (
-                  <li key={c.id} className="flex gap-3 p-4">
+                  <li key={change.id} className="flex gap-3 p-4">
                     <span className={cn("flex size-8 shrink-0 items-center justify-center rounded-lg ring-1", meta.cls)}>
                       <meta.icon className="size-4" />
                     </span>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-1.5">
-                          <span className="text-sm font-medium text-foreground">{c.symbol}</span>
-                          <span className="truncate text-xs text-muted-foreground">{c.type}</span>
+                          <span className="text-sm font-medium text-foreground">{change.symbol}</span>
+                          <span className="truncate text-xs text-muted-foreground">{change.type}</span>
                         </div>
-                        <span className="shrink-0 text-[11px] text-muted-foreground">{c.time}</span>
+                        <span className="shrink-0 text-[11px] text-muted-foreground">{change.time}</span>
                       </div>
-                      <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{c.text}</p>
+                      <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{change.text}</p>
                     </div>
                   </li>
                 )
@@ -231,7 +327,6 @@ export function WatchlistView() {
         </div>
       )}
 
-      {/* Track asset modal */}
       {addOpen && (
         <AddAssetModal
           tracked={tracked.map((asset) => asset.id)}
@@ -243,8 +338,6 @@ export function WatchlistView() {
   )
 }
 
-/* ---------- Add Asset Modal ---------- */
-
 function AddAssetModal({
   tracked,
   onAdd,
@@ -255,9 +348,36 @@ function AddAssetModal({
   onClose: () => void
 }) {
   const [q, setQ] = useState("")
-  const results = allAssets.filter(
-    (a) => a.name.toLowerCase().includes(q.toLowerCase()) || a.symbol.toLowerCase().includes(q.toLowerCase()),
-  )
+  const [results, setResults] = useState<Asset[]>([])
+  const [searching, setSearching] = useState(false)
+
+  useEffect(() => {
+    const query = q.trim()
+    if (!query) return
+
+    let cancelled = false
+    const timeout = window.setTimeout(async () => {
+      setSearching(true)
+      try {
+        const response = await fetch(`/api/market/search?q=${encodeURIComponent(query)}`)
+        if (!response.ok) throw new Error(`Search API responded ${response.status}`)
+        const data = await response.json() as { assets: Asset[] }
+        if (!cancelled && q.trim()) setResults(data.assets.slice(0, 8))
+      } catch {
+        if (!cancelled) setResults([])
+      } finally {
+        if (!cancelled) setSearching(false)
+      }
+    }, 250)
+
+    return () => {
+      cancelled = true
+      window.clearTimeout(timeout)
+    }
+  }, [q])
+
+  const shownResults = q.trim() ? results : []
+
   return (
     <ModalShell title="Track an Asset" onClose={onClose}>
       <div className="relative">
@@ -265,24 +385,32 @@ function AddAssetModal({
         <input
           autoFocus
           value={q}
-          onChange={(e) => setQ(e.target.value)}
+          onChange={(e) => {
+            const next = e.target.value
+            setQ(next)
+            if (!next.trim()) {
+              setResults([])
+              setSearching(false)
+            }
+          }}
           placeholder="Search token..."
-          className="w-full rounded-lg border border-border bg-surface py-2.5 pl-9 pr-3 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-primary/40"
+          className="w-full rounded-lg border border-border bg-surface py-2.5 pl-9 pr-9 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-primary/40"
         />
+        {searching && <Loader2 className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 animate-spin text-muted-foreground" />}
       </div>
       <div className="mt-3 max-h-80 space-y-1 overflow-y-auto">
-        {results.map((a: Asset) => {
-          const added = tracked.includes(a.id)
+        {shownResults.map((asset) => {
+          const added = tracked.includes(asset.id)
           return (
-            <div key={a.id} className="flex items-center gap-3 rounded-lg p-2 transition-colors hover:bg-white/[0.02]">
-              <TokenAvatar id={a.id} symbol={a.symbol} color={a.color} size={32} />
+            <div key={asset.id} className="flex items-center gap-3 rounded-lg p-2 transition-colors hover:bg-white/[0.02]">
+              <TokenAvatar id={asset.id} symbol={asset.symbol} color={asset.color} imageUrl={asset.imageUrl} size={32} />
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium text-foreground">{a.name}</p>
-                <p className="text-xs text-muted-foreground">{a.category}</p>
+                <p className="truncate text-sm font-medium text-foreground">{asset.name}</p>
+                <p className="text-xs text-muted-foreground">{asset.category}</p>
               </div>
               <button
                 disabled={added}
-                onClick={() => onAdd(a)}
+                onClick={() => onAdd(asset)}
                 className={cn(
                   "inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors",
                   added
@@ -295,13 +423,12 @@ function AddAssetModal({
             </div>
           )
         })}
-        {results.length === 0 && <p className="py-8 text-center text-sm text-muted-foreground">No assets found.</p>}
+        {q.trim() && !searching && shownResults.length === 0 && <p className="py-8 text-center text-sm text-muted-foreground">No assets found.</p>}
+        {!q.trim() && <p className="py-8 text-center text-sm text-muted-foreground">Search by token name or symbol.</p>}
       </div>
     </ModalShell>
   )
 }
-
-/* ---------- Shared modal shell ---------- */
 
 function ModalShell({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
   return (

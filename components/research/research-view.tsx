@@ -10,11 +10,10 @@ import { aiSignal, assets, getAsset, getResearch, type Asset, type RiskLevel } f
 import type { TokenReport } from "@/lib/research-cache"
 import { useReportHistory, type StoredReportRecord } from "@/lib/use-report-history"
 import Link from "next/link"
-import { useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import {
   Activity,
   ArrowUpRight,
-  Bookmark,
   Boxes,
   Check,
   ChevronRight,
@@ -38,6 +37,11 @@ import {
 
 type Status = "idle" | "loading" | "done"
 type ReportType = "quick" | "deep"
+type SearchStatus = "idle" | "searching" | "done"
+
+type MarketSearchResponse = {
+  assets: Asset[]
+}
 
 const reportTypes: { id: ReportType; label: string; description: string; icon: typeof Zap }[] = [
   { id: "quick", label: "Quick Analysis", description: "Fast overview of fundamentals and market position.", icon: Zap },
@@ -66,7 +70,7 @@ const popular = [
 ]
 
 export function ResearchView({ initialId }: { initialId?: string }) {
-  const { requireWallet, isConnected, isPro, reportsRemaining, consumeReport, openUpgrade } = useAuth()
+  const { requireWallet, isConnected, isPro, openUpgrade } = useAuth()
   const preset = initialId ? assets.find((a) => a.id === initialId) : undefined
   const [query, setQuery] = useState(preset?.name ?? initialId ?? "")
   const [status, setStatus] = useState<Status>("idle")
@@ -75,8 +79,46 @@ export function ResearchView({ initialId }: { initialId?: string }) {
   const [step, setStep] = useState(0)
   const [reportType, setReportType] = useState<ReportType>("quick")
   const [lastType, setLastType] = useState<ReportType>("quick")
+  const [selectedAsset, setSelectedAsset] = useState<Asset | undefined>(preset)
+  const [searchStatus, setSearchStatus] = useState<SearchStatus>("idle")
+  const [searchResults, setSearchResults] = useState<Asset[]>([])
+  const [searchOpen, setSearchOpen] = useState(false)
   const { records: history, upsertReport, removeReport } = useReportHistory()
   const searchRef = useRef<HTMLInputElement>(null)
+  const trimmedQuery = query.trim()
+
+  useEffect(() => {
+    const q = trimmedQuery
+    if (!q || selectedAsset?.name === q || selectedAsset?.symbol.toLowerCase() === q.toLowerCase()) {
+      return
+    }
+
+    let cancelled = false
+    const timeout = window.setTimeout(async () => {
+      setSearchStatus("searching")
+      try {
+        const response = await fetch(`/api/market/search?q=${encodeURIComponent(q)}`)
+        if (!response.ok) throw new Error(`Search API responded ${response.status}`)
+        const data = await response.json() as MarketSearchResponse
+        if (!cancelled) {
+          setSearchResults(data.assets.slice(0, 6))
+          setSearchStatus("done")
+          setSearchOpen(true)
+        }
+      } catch {
+        if (!cancelled) {
+          setSearchResults([])
+          setSearchStatus("done")
+          setSearchOpen(true)
+        }
+      }
+    }, 250)
+
+    return () => {
+      cancelled = true
+      window.clearTimeout(timeout)
+    }
+  }, [selectedAsset?.name, selectedAsset?.symbol, trimmedQuery])
 
   function focusSearch() {
     if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" })
@@ -107,6 +149,8 @@ export function ResearchView({ initialId }: { initialId?: string }) {
       const data = await response.json() as TokenReport
       setQuery(data.asset.name)
       setAsset(data.asset)
+      setSelectedAsset(data.asset)
+      setSearchOpen(false)
       setTokenReport(data)
       setStep(loadingSteps.length)
       setStatus("done")
@@ -130,53 +174,83 @@ export function ResearchView({ initialId }: { initialId?: string }) {
     }
   }
 
-  // Generating a report is gated: connect wallet first, then enforce the free-tier limit.
-  function runWithLimit(fn: () => void) {
-    // Pro members have unlimited access.
+  function runProOnly(fn: () => void) {
     if (isPro) {
       fn()
       return
     }
-    // Advanced Research is Pass-only; prompt upgrade for free members.
-    if (reportType === "deep") {
-      openUpgrade()
-      return
-    }
-    // Free members must have remaining reports, otherwise prompt upgrade.
-    if (reportsRemaining <= 0) {
-      openUpgrade()
-      return
-    }
-    consumeReport()
-    fn()
+    openUpgrade()
   }
 
   function guardedGenerate(target?: Asset) {
-    requireWallet(() => runWithLimit(() => void generate({ asset: target })), "report")
+    const targetAsset = target ?? selectedAsset
+    if (!targetAsset) {
+      setSearchOpen(true)
+      searchRef.current?.focus()
+      return
+    }
+    requireWallet(() => runProOnly(() => void generate({ asset: targetAsset })), "report")
+  }
+
+  function chooseSearchResult(result: Asset) {
+    setSelectedAsset(result)
+    setQuery(result.name)
+    setSearchOpen(false)
+    searchRef.current?.focus()
   }
 
   function openHistory(record: StoredReportRecord) {
     requireWallet(() => {
-      // Re-opening existing history does not consume a free report.
-      setReportType(record.reportType)
-      void generate({ assetId: record.assetId, query: record.assetName, reportType: record.reportType })
+      void openCachedHistory(record)
       if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" })
     }, "report")
   }
 
+  async function openCachedHistory(record: StoredReportRecord) {
+    setReportType(record.reportType)
+    setLastType(record.reportType)
+    setStatus("loading")
+    setStep(0)
+    setTokenReport(undefined)
+    try {
+      const params = new URLSearchParams({
+        asset: record.assetId,
+        type: record.reportType,
+        cache: "only",
+        date: record.generatedAt.slice(0, 10),
+      })
+      const response = await fetch(`/api/research/token-report?${params.toString()}`)
+      if (!response.ok) throw new Error(`Cached report API responded ${response.status}`)
+      const data = await response.json() as TokenReport
+      setQuery(data.asset.name)
+      setAsset(data.asset)
+      setSelectedAsset(data.asset)
+      setSearchOpen(false)
+      setTokenReport(data)
+      setStep(loadingSteps.length)
+      setStatus("done")
+    } catch {
+      setStatus("idle")
+    }
+  }
+
   async function downloadHistory(record: StoredReportRecord) {
-    const params = new URLSearchParams({ asset: record.assetId, type: record.reportType })
-    const response = await fetch(`/api/research/token-report/pdf?${params.toString()}`)
-    if (!response.ok) return
-    const blob = await response.blob()
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement("a")
-    link.href = url
-    link.download = `${record.assetId}-${record.reportType}-report-${record.generatedAt.slice(0, 10)}.pdf`
-    document.body.appendChild(link)
-    link.click()
-    link.remove()
-    URL.revokeObjectURL(url)
+    requireWallet(() => runProOnly(() => {
+      void (async () => {
+        const params = new URLSearchParams({ asset: record.assetId, type: record.reportType })
+        const response = await fetch(`/api/research/token-report/pdf?${params.toString()}`)
+        if (!response.ok) return
+        const blob = await response.blob()
+        const url = URL.createObjectURL(blob)
+        const link = document.createElement("a")
+        link.href = url
+        link.download = `${record.assetId}-${record.reportType}-report-${record.generatedAt.slice(0, 10)}.pdf`
+        document.body.appendChild(link)
+        link.click()
+        link.remove()
+        URL.revokeObjectURL(url)
+      })()
+    }), "export")
   }
 
   return (
@@ -256,17 +330,64 @@ export function ResearchView({ initialId }: { initialId?: string }) {
               <input
                 ref={searchRef}
                 value={query}
-                onChange={(e) => setQuery(e.target.value)}
+                onChange={(e) => {
+                  const value = e.target.value
+                  setQuery(value)
+                  setSelectedAsset(undefined)
+                  setSearchOpen(Boolean(value.trim()))
+                  if (!value.trim()) {
+                    setSearchStatus("idle")
+                    setSearchResults([])
+                  }
+                }}
+                onFocus={() => {
+                  if (searchResults.length || trimmedQuery) setSearchOpen(true)
+                }}
                 onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.nativeEvent.isComposing && e.keyCode !== 229) guardedGenerate()
+                  if (e.key === "Enter" && !e.nativeEvent.isComposing && e.keyCode !== 229) {
+                    if (selectedAsset) guardedGenerate()
+                    else setSearchOpen(true)
+                  }
                 }}
                 placeholder="Search token name or symbol..."
                 className="h-12 w-full rounded-xl border border-border bg-surface pl-11 pr-4 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary/50 focus:outline-none focus:ring-2 focus:ring-primary/20"
               />
+              {searchOpen && trimmedQuery && !selectedAsset && (
+                <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-30 overflow-hidden rounded-xl border border-border bg-card text-left shadow-2xl">
+                  {searchStatus === "searching" ? (
+                    <div className="flex items-center gap-2 px-4 py-3 text-sm text-muted-foreground">
+                      <Loader2 className="size-4 animate-spin" /> Searching tokens...
+                    </div>
+                  ) : searchResults.length ? (
+                    <div className="max-h-80 overflow-y-auto">
+                      {searchResults.map((result) => (
+                        <button
+                          key={result.id}
+                          type="button"
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={() => chooseSearchResult(result)}
+                          className="flex w-full items-center gap-3 border-b border-border px-4 py-3 text-left last:border-0 hover:bg-surface"
+                        >
+                          <TokenAvatar id={result.id} symbol={result.symbol} color={result.color} imageUrl={result.imageUrl} size={32} />
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm font-medium text-foreground">{result.name}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {result.symbol} / {result.category} / Rank #{result.rank}
+                            </p>
+                          </div>
+                          <span className="text-xs font-medium text-primary">Select</span>
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="px-4 py-3 text-sm text-muted-foreground">No matching tokens found.</div>
+                  )}
+                </div>
+              )}
             </div>
             <button
               onClick={() => guardedGenerate()}
-              disabled={status === "loading"}
+              disabled={status === "loading" || !selectedAsset}
               className={cn(buttonVariants({ size: "lg" }), "h-12 shrink-0 bg-primary px-6 text-primary-foreground hover:bg-primary/90")}
             >
               {status === "loading" ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
@@ -275,9 +396,7 @@ export function ResearchView({ initialId }: { initialId?: string }) {
           </div>
           {isConnected && !isPro && (
             <div className="mt-4 flex flex-wrap items-center justify-center gap-2 rounded-lg border border-border bg-surface px-4 py-2.5 text-xs">
-              <span className="text-muted-foreground">
-                Free plan 路 <span className="font-medium text-foreground">{reportsRemaining}</span> of {3} reports left today
-              </span>
+              <span className="text-muted-foreground">Research generation and exports require Research Pass.</span>
               <button
                 onClick={openUpgrade}
                 className="font-medium text-primary hover:underline"
@@ -431,9 +550,27 @@ export function ResearchView({ initialId }: { initialId?: string }) {
   )
 }
 
-function Report({ asset, reportType, tokenReport }: { asset: Asset; reportType: ReportType; tokenReport?: TokenReport }) {
-  const { requireWallet } = useAuth()
+function Report({
+  asset,
+  reportType,
+  tokenReport,
+}: {
+  asset: Asset
+  reportType: ReportType
+  tokenReport?: TokenReport
+}) {
+  const { requireWallet, isPro, openUpgrade } = useAuth()
   const r = tokenReport?.report ?? getResearch(asset)
+
+  function requireProExport(fn: () => void) {
+    requireWallet(() => {
+      if (!isPro) {
+        openUpgrade()
+        return
+      }
+      fn()
+    }, "export")
+  }
 
   async function downloadPdf() {
     const params = new URLSearchParams({ asset: asset.id, type: reportType })
@@ -466,13 +603,7 @@ function Report({ asset, reportType, tokenReport }: { asset: Asset; reportType: 
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <button
-              onClick={() => requireWallet(() => void downloadPdf(), "export")}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-2 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
-            >
-              <Bookmark className="size-3.5" /> Save Report
-            </button>
-            <button
-              onClick={() => requireWallet(() => {}, "export")}
+              onClick={() => requireProExport(() => void downloadPdf())}
               className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-2 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
             >
               <Download className="size-3.5" /> Export Report

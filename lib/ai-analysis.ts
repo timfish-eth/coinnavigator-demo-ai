@@ -32,6 +32,7 @@ const devActivityByCategory: Record<string, number> = {
   "Layer 2": 72,
   RWA: 66,
   DePIN: 70,
+  DeFi: 76,
   Oracle: 74,
   Stablecoin: 52,
   Market: 58,
@@ -153,7 +154,6 @@ function computeFeaturedAssets(assets: Asset[], narratives: Narrative[]): Comput
       }
     })
     .sort((a, b) => b.score - a.score)
-    .slice(0, 20)
 }
 
 function computeInsights(report: MarketResearchReport, narratives: Narrative[]): ComputedInsight[] {

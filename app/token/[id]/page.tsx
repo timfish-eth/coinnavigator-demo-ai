@@ -1,18 +1,16 @@
 import { AppShell } from "@/components/app/app-shell"
 import { TokenView } from "@/components/token/token-view"
-import { assets } from "@/lib/data"
-import { getOrCreateTokenProfile } from "@/lib/research-cache"
+import { getOrCreateTokenProfile, getTokenResearchSnapshot } from "@/lib/research-cache"
 
-export function generateStaticParams() {
-  return assets.map((a) => ({ id: a.id }))
-}
+export const dynamic = "force-dynamic"
 
 export default async function TokenPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const { asset } = await getOrCreateTokenProfile(id)
+  const research = await getTokenResearchSnapshot(asset)
   return (
     <AppShell>
-      <TokenView asset={asset} />
+      <TokenView asset={asset} research={research} />
     </AppShell>
   )
 }

@@ -219,6 +219,7 @@ function categoryFor(id: string, symbol: string, tags: string[] = []): string {
   if (key.includes("oracle") || ["link", "pyth"].includes(symbol.toLowerCase())) return "Oracle"
   if (key.includes("real-world-assets") || key.includes("rwa") || ["ondo", "pendle"].includes(symbol.toLowerCase())) return "RWA"
   if (key.includes("depin") || ["hnt", "akt"].includes(symbol.toLowerCase())) return "DePIN"
+  if (key.includes("defi") || key.includes("dex") || ["crv", "uni", "aave", "mkr", "comp", "sushi"].includes(symbol.toLowerCase())) return "DeFi"
   if (["btc", "eth", "sol", "bnb", "ada", "avax", "dot", "ton", "near", "sui"].includes(symbol.toLowerCase())) return "Layer 1"
   if (key.includes("stablecoin") || ["usdt", "usdc", "dai"].includes(symbol.toLowerCase())) return "Stablecoin"
   return "Market"
@@ -443,7 +444,7 @@ async function fetchCoinGeckoSearchAssets(query: string): Promise<TopAssetsResul
     .sort((a, b) => (a.market_cap_rank ?? Number.MAX_SAFE_INTEGER) - (b.market_cap_rank ?? Number.MAX_SAFE_INTEGER))
     .slice(0, SEARCH_ASSET_LIMIT)
 
-  const marketAssets = await fetchCoinGeckoMarketsByIds(coins.map((coin) => coin.id))
+  const marketAssets = await fetchCoinGeckoMarketsByIds(coins.map((coin) => coin.id)).catch(() => [])
   const byId = new Map(marketAssets.map((asset) => [asset.id, asset]))
   const assets = coins.map((coin) => {
     const marketAsset = byId.get(coin.id)
@@ -715,6 +716,17 @@ export async function getMarketAsset(id: string): Promise<Asset> {
     if (asset) return asset
   } catch {
     // Fall through to first available asset when the external lookup fails.
+  }
+
+  try {
+    const searchResult = await searchMarketAssets(id)
+    const normalized = id.toLowerCase()
+    const searchedAsset =
+      searchResult.assets.find((asset) => asset.id === normalized || asset.symbol.toLowerCase() === normalized || asset.name.toLowerCase() === normalized) ??
+      searchResult.assets[0]
+    if (searchedAsset) return searchedAsset
+  } catch {
+    // Fall through to first available asset when the external search fails.
   }
 
   return result.assets[0] ?? fallbackAssets[0]

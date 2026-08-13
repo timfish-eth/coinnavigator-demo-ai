@@ -1,12 +1,14 @@
 "use client"
 
 import { useAuth } from "@/components/auth/auth-context"
-import { RESEARCH_PASS_PERKS, formatPassPrice } from "@/lib/simulation"
+import { RESEARCH_PASS_PERKS } from "@/lib/simulation"
+import { useMembershipPriceLabel } from "@/lib/use-membership-price"
 import { Check, Crown, X } from "lucide-react"
 import { useEffect } from "react"
 
 export function UpgradeModal() {
   const { upgradeOpen, closeUpgrade, openPayment } = useAuth()
+  const priceLabel = useMembershipPriceLabel()
 
   useEffect(() => {
     if (!upgradeOpen) return
@@ -52,7 +54,7 @@ export function UpgradeModal() {
               Advanced Research requires Research Pass
             </h2>
             <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-              <span className="font-mono font-semibold text-foreground">{formatPassPrice()}</span>
+              <span className="font-mono font-semibold text-foreground">{priceLabel}</span>
             </p>
           </div>
 

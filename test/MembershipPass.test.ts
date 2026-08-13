@@ -90,6 +90,38 @@ describe("MembershipPass", () => {
     expect(balanceAfter - balanceBefore).to.equal(MONTHLY_PRICE)
   })
 
+  it("uses the admin-updated monthly price for new purchases", async () => {
+    const { owner, alice, token, membership } = await loadFixture(deployFixture)
+    const newPrice = ethers.parseUnits("19.9", 18)
+
+    await expect(membership.connect(owner).setMonthlyPrice(newPrice))
+      .to.emit(membership, "MonthlyPriceUpdated")
+      .withArgs(newPrice)
+    expect(await membership.monthlyPrice()).to.equal(newPrice)
+
+    await token.connect(alice).approve(await membership.getAddress(), ethers.parseUnits("100", 18))
+    const balanceBefore = await token.balanceOf(alice.address)
+    await membership.connect(alice).purchaseMembership(2)
+    const balanceAfter = await token.balanceOf(alice.address)
+
+    expect(balanceBefore - balanceAfter).to.equal(newPrice * 2n)
+  })
+
+  it("rejects monthly price updates from non-admin accounts", async () => {
+    const { alice, membership } = await loadFixture(deployFixture)
+    const newPrice = ethers.parseUnits("19.9", 18)
+
+    await expect(membership.connect(alice).setMonthlyPrice(newPrice))
+      .to.be.revertedWithCustomError(membership, "OwnableUnauthorizedAccount")
+      .withArgs(alice.address)
+  })
+
+  it("rejects invalid monthly price updates", async () => {
+    const { owner, membership } = await loadFixture(deployFixture)
+
+    await expect(membership.connect(owner).setMonthlyPrice(0)).to.be.revertedWith("Invalid monthly price")
+  })
+
   it("rejects invalid constructor args", async () => {
     const [owner] = await ethers.getSigners()
     const Membership = await ethers.getContractFactory("MembershipPass")

@@ -3,7 +3,7 @@
 import { Panel, PanelHeader } from "@/components/app/panel"
 import { RESEARCH_PASS, truncateAddress, useAuth, walletMeta } from "@/components/auth/auth-context"
 import { WalletGlyph } from "@/components/auth/wallet-glyph"
-import { formatPassPrice } from "@/lib/simulation"
+import { useMembershipPriceLabel } from "@/lib/use-membership-price"
 import { cn } from "@/lib/utils"
 import { useRouter } from "next/navigation"
 import { CalendarClock, Check, Crown, Wallet } from "lucide-react"
@@ -13,6 +13,7 @@ const proFeatures = ["Unlimited AI research", "Advanced reports", "Export report
 
 export function SettingsView() {
   const { wallet, isConnected, isPro, openConnect, openPayment, disconnect, membershipExpiryLabel } = useAuth()
+  const priceLabel = useMembershipPriceLabel()
   const router = useRouter()
   const showExpiry = isPro && membershipExpiryLabel !== "Not active"
 
@@ -98,7 +99,7 @@ export function SettingsView() {
           />
           <PlanColumn
             title={RESEARCH_PASS.name}
-            price={formatPassPrice()}
+            price={priceLabel}
             features={proFeatures}
             current={isPro}
             highlight
@@ -169,4 +170,3 @@ function PlanColumn({
     </div>
   )
 }
-

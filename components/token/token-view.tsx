@@ -4,7 +4,7 @@ import { Panel, PanelHeader } from "@/components/app/panel"
 import { useAuth } from "@/components/auth/auth-context"
 import { TokenAvatar } from "@/components/primitives"
 import { buttonVariants } from "@/components/ui/button"
-import { chainOf, getResearch, type Asset, type Impact } from "@/lib/data"
+import { chainOf, getResearch, type Asset, type Impact, type Research } from "@/lib/data"
 import { useWatchlist } from "@/lib/use-watchlist"
 import { cn } from "@/lib/utils"
 import { useRouter } from "next/navigation"
@@ -26,11 +26,11 @@ const impactTone: Record<Impact, string> = {
   Low: "bg-muted-foreground/10 text-muted-foreground ring-muted-foreground/20",
 }
 
-export function TokenView({ asset }: { asset: Asset }) {
+export function TokenView({ asset, research: initialResearch }: { asset: Asset; research?: Research }) {
   const { requireWallet } = useAuth()
   const router = useRouter()
   const { isSaved, toggleAsset } = useWatchlist()
-  const research = getResearch(asset)
+  const research = initialResearch ?? getResearch(asset)
   const bookmarked = isSaved(asset.id)
 
   const addToWatchlist = () => toggleAsset(asset)
@@ -85,7 +85,7 @@ export function TokenView({ asset }: { asset: Asset }) {
                   <Globe className="size-3.5" /> Website
                 </a>
                 <a
-                  href={`https://github.com/${asset.id}`}
+                  href={`https://github.com/search?q=${encodeURIComponent(`${asset.name} ${asset.symbol}`)}&type=repositories`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:text-primary"

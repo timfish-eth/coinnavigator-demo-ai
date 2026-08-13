@@ -1,9 +1,19 @@
-import { mkdir, readFile, rename, writeFile } from "fs/promises"
+import { mkdir, readFile, readdir, rename, writeFile } from "fs/promises"
 import path from "path"
 
 import type { TokenReport } from "@/lib/research-cache"
 
 type StoredTokenReport = Omit<TokenReport, "cacheStatus">
+
+export type StoredReportSummary = {
+  id: string
+  asset: StoredTokenReport["asset"]
+  reportType: StoredTokenReport["reportType"]
+  generatedAt: string
+  expiresAt: string
+  summary: string
+  source: "stored"
+}
 
 const REPORT_STORAGE_ROOT = path.join(process.cwd(), "storage", "reports")
 
@@ -66,6 +76,42 @@ export async function readStoredTokenReport(reportKey: string): Promise<StoredTo
 
 export async function writeStoredTokenReport(reportKey: string, report: StoredTokenReport): Promise<void> {
   await writeFileAtomic(reportPath(reportKey, "json"), JSON.stringify(report, null, 2))
+}
+
+export async function listStoredTokenReports(): Promise<StoredReportSummary[]> {
+  try {
+    const files = await readdir(/* turbopackIgnore: true */ REPORT_STORAGE_ROOT)
+    const reports = await Promise.all(
+      files
+        .filter((file) => file.endsWith(".json"))
+        .map(async (file) => {
+          try {
+            const raw = await readFile(/* turbopackIgnore: true */ path.join(REPORT_STORAGE_ROOT, file), "utf8")
+            const parsed = JSON.parse(raw) as Partial<StoredTokenReport>
+            if (!parsed.id || !parsed.asset || !parsed.report || !parsed.generatedAt || !parsed.expiresAt || !parsed.reportType) {
+              return null
+            }
+            return {
+              id: parsed.id,
+              asset: parsed.asset,
+              reportType: parsed.reportType,
+              generatedAt: parsed.generatedAt,
+              expiresAt: parsed.expiresAt,
+              summary: parsed.report.summary,
+              source: "stored" as const,
+            }
+          } catch {
+            return null
+          }
+        }),
+    )
+
+    return reports
+      .filter((report): report is StoredReportSummary => Boolean(report))
+      .sort((a, b) => new Date(b.generatedAt).getTime() - new Date(a.generatedAt).getTime())
+  } catch {
+    return []
+  }
 }
 
 export async function readStoredReportPdf(reportKey: string): Promise<Buffer | null> {

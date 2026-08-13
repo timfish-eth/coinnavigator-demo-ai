@@ -3,7 +3,7 @@
 import { Panel, PanelHeader } from "@/components/app/panel"
 import { ChangeBadge, TokenAvatar } from "@/components/primitives"
 import type { ComputedFeaturedAsset } from "@/lib/ai-analysis"
-import { aiScore, assets as fallbackAssets, featuredAssets, narratives, type Asset } from "@/lib/data"
+import { aiScore, assets as fallbackAssets, featuredAssets, narratives as fallbackNarratives, type Asset, type Narrative } from "@/lib/data"
 import { useWatchlist } from "@/lib/use-watchlist"
 import { cn } from "@/lib/utils"
 import { ArrowUpRight, Compass, Loader2, Search, Sparkles, Star } from "lucide-react"
@@ -25,6 +25,10 @@ const whyTrendingMap: Record<string, string> = Object.fromEntries(
   featuredAssets.map((f) => [f.id, f.whyTrending]),
 )
 
+function researchScoreFor(asset: Asset, scoredAssets: Map<string, ComputedFeaturedAsset>): number {
+  return scoredAssets.get(asset.id)?.score ?? aiScore(asset)
+}
+
 export function MarketView() {
   const [query, setQuery] = useState("")
   const [category, setCategory] = useState("All")
@@ -34,6 +38,7 @@ export function MarketView() {
     updatedAt: new Date().toISOString(),
   })
   const [featuredAnalysis, setFeaturedAnalysis] = useState<ComputedFeaturedAsset[]>([])
+  const [dynamicNarratives, setDynamicNarratives] = useState<Narrative[]>(fallbackNarratives)
   const [loading, setLoading] = useState(true)
   const [searchMarket, setSearchMarket] = useState<SearchMarketResponse | undefined>()
   const { isSaved, toggleAsset } = useWatchlist()
@@ -72,10 +77,16 @@ export function MarketView() {
       try {
         const response = await fetch("/api/research/market-analysis")
         if (!response.ok) throw new Error(`Analysis API responded ${response.status}`)
-        const data = await response.json() as { featuredAssets: ComputedFeaturedAsset[] }
-        if (!cancelled) setFeaturedAnalysis(data.featuredAssets)
+        const data = await response.json() as { featuredAssets: ComputedFeaturedAsset[]; narratives: Narrative[] }
+        if (!cancelled) {
+          setFeaturedAnalysis(data.featuredAssets)
+          setDynamicNarratives(data.narratives.length ? data.narratives : fallbackNarratives)
+        }
       } catch {
-        if (!cancelled) setFeaturedAnalysis([])
+        if (!cancelled) {
+          setFeaturedAnalysis([])
+          setDynamicNarratives(fallbackNarratives)
+        }
       }
     }
 
@@ -165,7 +176,7 @@ export function MarketView() {
           action={<span className="text-xs text-muted-foreground">Market themes</span>}
         />
         <div className="grid grid-cols-1 gap-px overflow-hidden rounded-b-2xl bg-border sm:grid-cols-2">
-          {narratives.map((n) => (
+          {dynamicNarratives.map((n) => (
             <div key={n.name} className="flex flex-col bg-card p-5 transition-colors hover:bg-white/[0.02]">
               <div className="flex items-start justify-between gap-3">
                 <h3 className="text-sm font-semibold text-foreground">{n.name}</h3>
@@ -317,7 +328,7 @@ export function MarketView() {
                     <td className="px-4 py-3.5">
                       <div className="flex items-center justify-center">
                         <span className="inline-flex min-w-9 items-center justify-center rounded-md bg-primary/10 px-2 py-1 text-xs font-semibold tabular-nums text-primary">
-                          {featuredById.get(a.id)?.score ?? aiScore(a)}
+                          {researchScoreFor(a, featuredById)}
                         </span>
                       </div>
                     </td>

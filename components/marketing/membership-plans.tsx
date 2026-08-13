@@ -1,7 +1,8 @@
 "use client"
 
 import { RESEARCH_PASS, useAuth } from "@/components/auth/auth-context"
-import { RESEARCH_PASS_PERKS, formatPassPrice } from "@/lib/simulation"
+import { RESEARCH_PASS_PERKS } from "@/lib/simulation"
+import { useMembershipPriceLabel } from "@/lib/use-membership-price"
 import { cn } from "@/lib/utils"
 import { CalendarClock, Check, Crown, Wallet } from "lucide-react"
 
@@ -9,6 +10,7 @@ const freeFeatures = ["Market overview", "Basic token analysis", "Limited AI rep
 
 export function MembershipPlans({ variant = "marketing" }: { variant?: "marketing" | "app" }) {
   const { isConnected, isPro, openConnect, openPayment, membershipExpiryLabel } = useAuth()
+  const priceLabel = useMembershipPriceLabel()
   const showExpiry = isPro && membershipExpiryLabel !== "Not active"
 
   const handlePay = () => {
@@ -56,7 +58,7 @@ export function MembershipPlans({ variant = "marketing" }: { variant?: "marketin
           )}
         </div>
         <p className="relative mt-2 font-mono text-3xl font-semibold text-foreground">
-          {formatPassPrice()}
+          {priceLabel}
         </p>
         <p className="relative mt-1 text-xs text-muted-foreground">Paid on {RESEARCH_PASS.network} with USDT</p>
         {showExpiry && (
