@@ -12,6 +12,14 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Reference / requirements archive extracted for comparison only.
+    "coin-navigator-ref/**",
+    "coin-navigator.zip",
+    // Hardhat build artifacts.
+    "cache/**",
+    "artifacts/**",
+    "typechain/**",
+    "typechain-types/**",
   ]),
 ]);
 

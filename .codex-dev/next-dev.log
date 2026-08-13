@@ -1,0 +1,131 @@
+
+> coinnavigator-demo-ai@0.1.0 dev
+> next dev
+
+▲ Next.js 16.2.6 (Turbopack)
+- Local:         http://localhost:3000
+- Network:       http://198.18.0.1:3000
+- Environments: .env
+✓ Ready in 264ms
+
+○ Compiling /market ...
+[browser] Lit is in dev mode. Not recommended for production! See https://lit.dev/msg/dev-mode for more information.
+[browser] [Reown Config] Failed to fetch remote project configuration. Using local/default values. Error: HTTP status code: 403
+ GET /market 200 in 7.0s (next.js: 6.7s, application-code: 314ms)
+ GET /library 200 in 3.8s (next.js: 3.8s, application-code: 63ms)
+ HEAD /library 200 in 53ms (next.js: 4ms, application-code: 50ms)
+[browser] Lit is in dev mode. Not recommended for production! See https://lit.dev/msg/dev-mode for more information.
+[browser] [Reown Config] Failed to fetch remote project configuration. Using local/default values. Error: HTTP status code: 403
+[browser] Image with src "http://localhost:3000/coinnavigator-logo.png" has either width or height modified, but not the other. If you use CSS to change the size of your image, also include the styles 'width: "auto"' or 'height: "auto"' to maintain the aspect ratio.
+ GET /tokens/bittensor.png 404 in 65ms (next.js: 37ms, application-code: 28ms)
+ GET /library 200 in 39ms (next.js: 4ms, application-code: 36ms)
+[browser] Image with src "http://localhost:3000/coinnavigator-logo.png" has either width or height modified, but not the other. If you use CSS to change the size of your image, also include the styles 'width: "auto"' or 'height: "auto"' to maintain the aspect ratio.
+[browser] Lit is in dev mode. Not recommended for production! See https://lit.dev/msg/dev-mode for more information.
+[browser] [Reown Config] Failed to fetch remote project configuration. Using local/default values. Error: HTTP status code: 403
+ HEAD /library 200 in 30ms (next.js: 3ms, application-code: 27ms)
+ GET /tokens/bittensor.png 404 in 24ms (next.js: 3ms, application-code: 21ms)
+ GET /library 200 in 30ms (next.js: 2ms, application-code: 28ms)
+[browser] Image with src "http://localhost:3000/coinnavigator-logo.png" has either width or height modified, but not the other. If you use CSS to change the size of your image, also include the styles 'width: "auto"' or 'height: "auto"' to maintain the aspect ratio.
+[browser] Lit is in dev mode. Not recommended for production! See https://lit.dev/msg/dev-mode for more information.
+[browser] [Reown Config] Failed to fetch remote project configuration. Using local/default values. Error: HTTP status code: 403
+ HEAD /library 200 in 28ms (next.js: 2ms, application-code: 26ms)
+ GET /tokens/bittensor.png 404 in 25ms (next.js: 4ms, application-code: 20ms)
+ GET /dashboard 200 in 37ms (next.js: 25ms, application-code: 12ms)
+ GET /tokens/bittensor.png 404 in 227ms (next.js: 6ms, application-code: 221ms)
+[TypeError: fetch failed] {
+  [cause]: Error: connect EACCES 198.18.0.45:443
+      at <unknown> (Error: connect EACCES 198.18.0.45:443) {
+    errno: -4092,
+    code: 'EACCES',
+    syscall: 'connect',
+    address: '198.18.0.45',
+    port: 443
+  }
+}
+[TypeError: fetch failed] {
+  [cause]: Error: connect EACCES 198.18.0.45:443
+      at <unknown> (Error: connect EACCES 198.18.0.45:443) {
+    errno: -4092,
+    code: 'EACCES',
+    syscall: 'connect',
+    address: '198.18.0.45',
+    port: 443
+  }
+}
+⨯ Error: failed to pipe response
+    at ignore-listed frames {
+  [cause]: [TypeError: fetch failed] {
+    [cause]: Error: connect EACCES 198.18.0.45:443
+        at <unknown> (Error: connect EACCES 198.18.0.45:443) {
+      errno: -4092,
+      code: 'EACCES',
+      syscall: 'connect',
+      address: '198.18.0.45',
+      port: 443
+    }
+  }
+}
+ GET /api/research/market-report 500 in 310ms (next.js: 153ms, application-code: 157ms)
+[TypeError: fetch failed] {
+  [cause]: Error: connect EACCES 198.18.0.45:443
+      at <unknown> (Error: connect EACCES 198.18.0.45:443) {
+    errno: -4092,
+    code: 'EACCES',
+    syscall: 'connect',
+    address: '198.18.0.45',
+    port: 443
+  }
+}
+[TypeError: fetch failed] {
+  [cause]: Error: connect EACCES 198.18.0.45:443
+      at <unknown> (Error: connect EACCES 198.18.0.45:443) {
+    errno: -4092,
+    code: 'EACCES',
+    syscall: 'connect',
+    address: '198.18.0.45',
+    port: 443
+  }
+}
+[TypeError: fetch failed] {
+  [cause]: Error: connect EACCES 198.18.0.45:443
+      at <unknown> (Error: connect EACCES 198.18.0.45:443) {
+    errno: -4092,
+    code: 'EACCES',
+    syscall: 'connect',
+    address: '198.18.0.45',
+    port: 443
+  }
+}
+⨯ Error: failed to pipe response
+    at ignore-listed frames {
+  [cause]: [TypeError: fetch failed] {
+    [cause]: Error: connect EACCES 198.18.0.45:443
+        at <unknown> (Error: connect EACCES 198.18.0.45:443) {
+      errno: -4092,
+      code: 'EACCES',
+      syscall: 'connect',
+      address: '198.18.0.45',
+      port: 443
+    }
+  }
+}
+ GET /api/research/market-analysis 500 in 360ms (next.js: 192ms, application-code: 168ms)
+[TypeError: fetch failed] {
+  [cause]: Error: connect EACCES 198.18.0.45:443
+      at <unknown> (Error: connect EACCES 198.18.0.45:443) {
+    errno: -4092,
+    code: 'EACCES',
+    syscall: 'connect',
+    address: '198.18.0.45',
+    port: 443
+  }
+}
+ GET /api/research/market-report 200 in 4ms (next.js: 1579µs, application-code: 2ms)
+ GET /api/research/market-analysis 200 in 7ms (next.js: 5ms, application-code: 2ms)
+ GET /api/research/market-analysis 200 in 4ms (next.js: 1191µs, application-code: 3ms)
+ GET /api/research/market-analysis 200 in 3ms (next.js: 1032µs, application-code: 1985µs)
+ GET /watchlist 200 in 52ms (next.js: 42ms, application-code: 10ms)
+ GET /library 200 in 12ms (next.js: 3ms, application-code: 10ms)
+ GET /tokens/bittensor.png 404 in 29ms (next.js: 6ms, application-code: 23ms)
+ GET /dashboard 200 in 20ms (next.js: 3ms, application-code: 16ms)
+ GET /tokens/bittensor.png 404 in 39ms (next.js: 6ms, application-code: 33ms)
