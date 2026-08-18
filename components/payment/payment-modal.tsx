@@ -3,6 +3,7 @@
 import { RESEARCH_PASS, truncateAddress, useAuth } from "@/components/auth/auth-context"
 import { erc20Abi } from "@/lib/contracts/erc20-abi"
 import { membershipPassAbi } from "@/lib/contracts/membership-pass-abi"
+import { displayPaymentTokenSymbol } from "@/lib/use-membership-price"
 import { cn } from "@/lib/utils"
 import { Check, Loader2, ShieldCheck, Wallet, X } from "lucide-react"
 import { useCallback, useEffect, useMemo, useState } from "react"
@@ -66,7 +67,7 @@ export function PaymentModal() {
   })
 
   const isProcessing = phase === "approving" || phase === "recharging"
-  const tokenUnit = tokenSymbol ?? "USDT"
+  const tokenUnit = displayPaymentTokenSymbol(tokenSymbol)
   const formattedPrice = useMemo(() => {
     if (!isSupportedChain) return "Unsupported network"
     if (!membershipContractAddress) return "Contract not configured"
