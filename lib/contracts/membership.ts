@@ -32,7 +32,7 @@ export function getMembershipPassAddress(chainId?: number): Address | undefined 
 
 export function formatMembershipExpiry(expiry?: bigint): string {
   if (!expiry) return "Not active"
-  return new Intl.DateTimeFormat(undefined, {
+  return new Intl.DateTimeFormat("en-US", {
     year: "numeric",
     month: "short",
     day: "2-digit",

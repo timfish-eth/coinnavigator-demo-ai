@@ -8,7 +8,7 @@ import { getDailyTokenNews } from "@/lib/token-news"
 const DAY_MS = 24 * 60 * 60 * 1000
 const REPORT_TTL_DAYS = 7
 const REPORT_TTL_MS = REPORT_TTL_DAYS * DAY_MS
-const TOKEN_REPORT_TEMPLATE_VERSION = "v2"
+const TOKEN_REPORT_TEMPLATE_VERSION = "v3"
 
 export type TokenProfile = {
   asset: Asset
@@ -27,6 +27,10 @@ export type TokenReport = {
     marketDataDate: string
     newsWindow: "24h"
   }
+}
+
+export function normalizeReportType(value?: string | null): TokenReport["reportType"] {
+  return value === "deep" || value === "full" ? "deep" : "quick"
 }
 
 type StoredTokenReport = Omit<TokenReport, "cacheStatus">
@@ -108,7 +112,12 @@ function newsIntel(asset: Asset, news: { title: string; source: string; url?: st
   ]
 }
 
-function buildDataDrivenResearch(asset: Asset, marketAnalysis: MarketAnalysis, news: MarketAnalysis["report"]["news"]): Research {
+function buildDataDrivenResearch(
+  asset: Asset,
+  marketAnalysis: MarketAnalysis,
+  news: MarketAnalysis["report"]["news"],
+  reportType: TokenReport["reportType"] = "quick",
+): Research {
   const base = getResearch(asset)
   const narrative = marketAnalysis.narratives.find((item) => item.name === asset.category)
   const featured = marketAnalysis.featuredAssets.find((item) => item.id === asset.id)
@@ -122,7 +131,7 @@ function buildDataDrivenResearch(asset: Asset, marketAnalysis: MarketAnalysis, n
   const sectorScore = narrative?.activity ?? asset.activity
   const newsCount = news.length
 
-  return {
+  const fullResearch: Research = {
     ...base,
     overview: `${asset.name} is a ${asset.category} asset currently ranked #${asset.rank} by market capitalization. The profile is generated from live market data, category momentum and the latest daily news available to the app.`,
     marketPosition: `${asset.name} trades with ${asset.volume} in 24h volume and ${asset.marketCap} market capitalization. Its ${asset.category} narrative score is ${sectorScore}, with average category movement of ${sectorChange >= 0 ? "+" : ""}${sectorChange.toFixed(2)}% over 24h.`,
@@ -214,6 +223,64 @@ function buildDataDrivenResearch(asset: Asset, marketAnalysis: MarketAnalysis, n
     narratives: narrative ? [narrative.name, ...narrative.assets.filter((symbol) => symbol !== asset.symbol).slice(0, 3)] : base.narratives,
     latestIntel: newsIntel(asset, news),
   }
+
+  if (reportType === "deep") {
+    return {
+      ...fullResearch,
+      summary: `${fullResearch.summary} Advanced analysis extends the view across market structure, macro liquidity, financial quality, token mechanics, ecosystem durability and multi-factor risk.`,
+      fundamentals: [
+        ...fullResearch.fundamentals,
+        {
+          title: "Economic Context",
+          description: `${asset.name} should be evaluated against broad crypto liquidity, BTC dominance, risk appetite and the current ${asset.category} cycle.`,
+          details: [
+            { label: "Market Cap Cycle", value: marketAnalysis.report.metrics.totalMarketCap.value },
+            { label: "BTC Dominance", value: marketAnalysis.report.metrics.btcDominance.value },
+          ],
+        },
+        {
+          title: "Financial Quality",
+          description: `Financial strength is proxied through market cap rank, trading volume depth, attention score and resilience under recent 24h market movement.`,
+          details: [
+            { label: "24h Volume", value: asset.volume },
+            { label: "Liquidity Rank", value: `#${asset.rank}` },
+          ],
+        },
+      ],
+      marketInterest: [
+        ...fullResearch.marketInterest,
+        { label: "Market Cap", value: asset.marketCap, change: rankScore - 50 },
+        { label: "Macro Liquidity", value: marketAnalysis.report.metrics.volume24h.value, change: marketAnalysis.report.metrics.totalMarketCap.change ?? 0 },
+        { label: "BTC Dominance", value: marketAnalysis.report.metrics.btcDominance.value, change: 0 },
+      ],
+      riskScores: [
+        ...fullResearch.riskScores,
+        { label: "Macro Risk", level: riskLevel(65 + (marketAnalysis.report.metrics.totalMarketCap.change ?? 0) * 4), note: "Sensitivity to broad liquidity and BTC-led risk cycles" },
+        { label: "Financial Risk", level: riskLevel((rankScore + volumeScore) / 2), note: "Market depth, capitalization rank and trading quality" },
+        { label: "Narrative Risk", level: riskLevel(sectorScore), note: "Durability of category attention and sector rotation" },
+      ],
+      onchain: [
+        ...fullResearch.onchain,
+        { label: "Macro Liquidity Proxy", value: marketAnalysis.report.metrics.volume24h.value, change: marketAnalysis.report.metrics.totalMarketCap.change ?? 0, hint: "Global market volume and market-cap movement" },
+        { label: "Sector Rotation", value: `${sectorChange >= 0 ? "+" : ""}${sectorChange.toFixed(2)}%`, change: sectorChange, hint: "Average movement of related category assets" },
+      ],
+      social: [
+        ...fullResearch.social,
+        { label: "Daily News Inputs", value: `${newsCount}`, change: newsCount * 2 },
+        { label: "Research Breadth", value: "Advanced", change: 10 },
+      ],
+    }
+  }
+
+  return {
+    ...fullResearch,
+    fundamentals: fullResearch.fundamentals.slice(0, 2),
+    marketInterest: fullResearch.marketInterest.slice(0, 3),
+    riskScores: fullResearch.riskScores.slice(0, 3),
+    onchain: fullResearch.onchain.slice(0, 2),
+    social: fullResearch.social.slice(0, 2),
+    latestIntel: fullResearch.latestIntel.slice(0, 2),
+  }
 }
 
 export function pruneExpiredTokenReports(now = Date.now()) {
@@ -255,7 +322,7 @@ export async function getTokenResearchSnapshot(asset: Asset): Promise<Research> 
     getDailyTokenNews(asset),
   ])
   const reportNews = tokenNews.length ? tokenNews : dailyAnalysis.report.news
-  return buildDataDrivenResearch(asset, dailyAnalysis, reportNews)
+  return buildDataDrivenResearch(asset, dailyAnalysis, reportNews, "quick")
 }
 
 export async function getStoredTokenReport(input: {
@@ -330,13 +397,14 @@ export async function getOrCreateTokenReport(input: {
     const dailyAnalysis = await getDailyMarketAnalysis()
     const tokenNews = await getDailyTokenNews(asset)
     const reportNews = tokenNews.length ? tokenNews : dailyAnalysis.report.news
-    const baseResearch = buildDataDrivenResearch(asset, dailyAnalysis, reportNews)
+    const baseResearch = buildDataDrivenResearch(asset, dailyAnalysis, reportNews, reportType)
     let report = baseResearch
     try {
       const aiResearch = await generateResearchWithLlm({
         asset,
         baseResearch,
         news: reportNews,
+        reportType,
       })
       report = {
         ...baseResearch,

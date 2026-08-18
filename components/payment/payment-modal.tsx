@@ -54,12 +54,28 @@ export function PaymentModal() {
     functionName: "decimals",
     query: { enabled: Boolean(paymentToken) },
   })
+  const {
+    data: tokenBalance,
+    isLoading: balanceLoading,
+    refetch: refetchTokenBalance,
+  } = useReadContract({
+    address: paymentToken as Address | undefined,
+    abi: erc20Abi,
+    functionName: "balanceOf",
+    args: account.address ? [account.address] : undefined,
+    query: { enabled: Boolean(paymentToken && account.address) },
+  })
 
   const isProcessing = phase === "approving" || phase === "recharging"
+  const tokenUnit = tokenSymbol ?? "USDT"
   const formattedPrice = useMemo(() => {
     if (!monthlyPrice || tokenDecimals === undefined) return formatPassPrice()
-    return `${formatUnits(monthlyPrice, tokenDecimals)} ${tokenSymbol ?? "USDT"} / ${RESEARCH_PASS.period}`
-  }, [monthlyPrice, tokenDecimals, tokenSymbol])
+    return `${formatUnits(monthlyPrice, tokenDecimals)} ${tokenUnit} / ${RESEARCH_PASS.period}`
+  }, [monthlyPrice, tokenDecimals, tokenUnit])
+  const formattedBalance = useMemo(() => {
+    if (tokenBalance === undefined || tokenDecimals === undefined) return "-"
+    return `${formatUnits(tokenBalance, tokenDecimals)} ${tokenUnit}`
+  }, [tokenBalance, tokenDecimals, tokenUnit])
 
   const handleClose = useCallback(() => {
     if (isProcessing) return
@@ -85,6 +101,16 @@ export function PaymentModal() {
 
     try {
       setError(null)
+      const latestBalance = await refetchTokenBalance()
+      const balance = latestBalance.data ?? tokenBalance ?? 0n
+      if (balance < monthlyPrice) {
+        setPhase("confirm")
+        const required = tokenDecimals === undefined ? monthlyPrice.toString() : `${formatUnits(monthlyPrice, tokenDecimals)} ${tokenUnit}`
+        const available = tokenDecimals === undefined ? balance.toString() : `${formatUnits(balance, tokenDecimals)} ${tokenUnit}`
+        setError(`Insufficient ${tokenUnit} balance. Required: ${required}. Available: ${available}. Please add funds and try again.`)
+        return
+      }
+
       setPhase("approving")
       const approveHash = await writeContractAsync({
         address: paymentToken,
@@ -176,6 +202,7 @@ export function PaymentModal() {
               <div className="mt-6 rounded-xl border border-border bg-surface p-4 text-sm">
                 <Row label="Plan" value={RESEARCH_PASS.name} />
                 <Row label="Price" value={formattedPrice} mono />
+                <Row label="Balance" value={balanceLoading ? "Checking..." : formattedBalance} mono />
                 <Row label="Network" value={RESEARCH_PASS.network} />
                 <Row label="From" value={wallet ? truncateAddress(wallet.address) : "-"} mono />
               </div>

@@ -10,7 +10,7 @@ import { aiSignal, assets, getAsset, getResearch, type Asset, type RiskLevel } f
 import type { TokenReport } from "@/lib/research-cache"
 import { useReportHistory, type StoredReportRecord } from "@/lib/use-report-history"
 import Link from "next/link"
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import {
   Activity,
   ArrowUpRight,
@@ -43,9 +43,21 @@ type MarketSearchResponse = {
   assets: Asset[]
 }
 
-const reportTypes: { id: ReportType; label: string; description: string; icon: typeof Zap }[] = [
-  { id: "quick", label: "Quick Analysis", description: "Fast overview of fundamentals and market position.", icon: Zap },
-  { id: "deep", label: "Advanced Research", description: "Full analyst report: market position, ecosystem, growth drivers and risks.", icon: Telescope },
+const reportTypes: { id: ReportType; label: string; description: string; coverage: string[]; icon: typeof Zap }[] = [
+  {
+    id: "quick",
+    label: "Quick Analysis",
+    description: "Fast daily read for market position, drivers and near-term risk.",
+    coverage: ["Executive summary", "Market snapshot", "Key risks"],
+    icon: Zap,
+  },
+  {
+    id: "deep",
+    label: "Advanced Research",
+    description: "Full analyst report with broader market, economic, financial and risk context.",
+    coverage: ["Fundamentals", "Macro context", "Financial signals", "Ecosystem and token risk"],
+    icon: Telescope,
+  },
 ]
 
 const reportTypeLabel: Record<ReportType, string> = {
@@ -69,7 +81,7 @@ const popular = [
   { label: "RWA Projects", id: "ondo" },
 ]
 
-export function ResearchView({ initialId }: { initialId?: string }) {
+export function ResearchView({ initialId, initialType, initialDate }: { initialId?: string; initialType?: ReportType; initialDate?: string }) {
   const { requireWallet, isConnected, isPro, openUpgrade } = useAuth()
   const preset = initialId ? assets.find((a) => a.id === initialId) : undefined
   const [query, setQuery] = useState(preset?.name ?? initialId ?? "")
@@ -77,8 +89,8 @@ export function ResearchView({ initialId }: { initialId?: string }) {
   const [asset, setAsset] = useState<Asset | undefined>(preset)
   const [tokenReport, setTokenReport] = useState<TokenReport | undefined>()
   const [step, setStep] = useState(0)
-  const [reportType, setReportType] = useState<ReportType>("quick")
-  const [lastType, setLastType] = useState<ReportType>("quick")
+  const [reportType, setReportType] = useState<ReportType>(initialType ?? "quick")
+  const [lastType, setLastType] = useState<ReportType>(initialType ?? "quick")
   const [selectedAsset, setSelectedAsset] = useState<Asset | undefined>(preset)
   const [searchStatus, setSearchStatus] = useState<SearchStatus>("idle")
   const [searchResults, setSearchResults] = useState<Asset[]>([])
@@ -86,6 +98,10 @@ export function ResearchView({ initialId }: { initialId?: string }) {
   const { records: history, upsertReport, removeReport } = useReportHistory()
   const searchRef = useRef<HTMLInputElement>(null)
   const trimmedQuery = query.trim()
+  const selectedHistory = useMemo(() => {
+    if (!selectedAsset) return []
+    return history.filter((record) => record.assetId === selectedAsset.id)
+  }, [history, selectedAsset])
 
   useEffect(() => {
     const q = trimmedQuery
@@ -234,10 +250,27 @@ export function ResearchView({ initialId }: { initialId?: string }) {
     }
   }
 
+  useEffect(() => {
+    if (!initialId || !initialType || !initialDate) return
+    void openCachedHistory({
+      id: `${initialId}:${initialType}:${initialDate}`,
+      assetId: initialId,
+      assetName: preset?.name ?? initialId,
+      symbol: preset?.symbol ?? initialId.toUpperCase(),
+      color: preset?.color ?? "#64748b",
+      imageUrl: preset?.imageUrl,
+      reportType: initialType,
+      generatedAt: initialDate,
+      expiresAt: `${initialDate.slice(0, 10)}T23:59:59.000Z`,
+    })
+    // Run once for route-provided report lookup.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   async function downloadHistory(record: StoredReportRecord) {
     requireWallet(() => runProOnly(() => {
       void (async () => {
-        const params = new URLSearchParams({ asset: record.assetId, type: record.reportType })
+        const params = new URLSearchParams({ asset: record.assetId, type: record.reportType, date: record.generatedAt.slice(0, 10) })
         const response = await fetch(`/api/research/token-report/pdf?${params.toString()}`)
         if (!response.ok) return
         const blob = await response.blob()
@@ -311,7 +344,7 @@ export function ResearchView({ initialId }: { initialId?: string }) {
         </div>
       </Panel>
 
-      {/* Section 1 鈥?Search panel */}
+      {/* Section 1 - Search panel */}
       <Panel className="relative overflow-hidden p-6 lg:p-8">
         <div className="absolute -right-16 -top-16 size-56 rounded-full bg-primary/10 blur-3xl" />
         <div className="relative mx-auto max-w-2xl text-center">
@@ -405,6 +438,39 @@ export function ResearchView({ initialId }: { initialId?: string }) {
               </button>
             </div>
           )}
+          {selectedAsset && (
+            <div className="mt-4 rounded-xl border border-border bg-card p-4 text-left">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex min-w-0 items-center gap-3">
+                  <TokenAvatar id={selectedAsset.id} symbol={selectedAsset.symbol} color={selectedAsset.color} imageUrl={selectedAsset.imageUrl} size={36} />
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-foreground">{selectedAsset.name}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {selectedAsset.symbol} / {selectedAsset.category} / Rank #{selectedAsset.rank}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {selectedHistory.length > 0 ? (
+                    selectedHistory.slice(0, 2).map((record) => (
+                      <button
+                        key={record.id}
+                        type="button"
+                        onClick={() => openHistory(record)}
+                        className="rounded-lg border border-primary/30 bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary transition-colors hover:bg-primary/15"
+                      >
+                        Open existing {record.reportType === "deep" ? "advanced" : "quick"}
+                      </button>
+                    ))
+                  ) : (
+                    <span className="rounded-lg border border-border bg-surface px-2.5 py-1 text-xs text-muted-foreground">
+                      No existing report found
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
           <div className="mt-6 grid gap-3 text-left sm:grid-cols-2">
             {reportTypes.map((t) => {
               const active = reportType === t.id
@@ -448,6 +514,13 @@ export function ResearchView({ initialId }: { initialId?: string }) {
                   </div>
                   <p className="mt-3 text-sm font-semibold text-foreground">{t.label}</p>
                   <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{t.description}</p>
+                  <div className="mt-3 flex flex-wrap gap-1.5">
+                    {t.coverage.map((item) => (
+                      <span key={item} className="rounded-md border border-border bg-card px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                        {item}
+                      </span>
+                    ))}
+                  </div>
                 </button>
               )
             })}
@@ -458,7 +531,7 @@ export function ResearchView({ initialId }: { initialId?: string }) {
             {popular.map((p) => (
               <button
                 key={p.label}
-                onClick={() => guardedGenerate(getAsset(p.id))}
+                onClick={() => chooseSearchResult(getAsset(p.id))}
                 className="rounded-lg border border-border bg-surface px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
               >
                 {p.label}
@@ -468,7 +541,7 @@ export function ResearchView({ initialId }: { initialId?: string }) {
         </div>
       </Panel>
 
-      {/* Section 2 鈥?Generation workflow */}
+      {/* Section 2 - Generation workflow */}
       {status === "loading" && (
         <Panel className="p-8">
           <div className="mx-auto max-w-md">
@@ -528,7 +601,7 @@ export function ResearchView({ initialId }: { initialId?: string }) {
         </div>
       )}
 
-      {/* Section 3鈥?0 鈥?Generated report */}
+      {/* Section 3 - Generated report */}
       {status === "done" && asset && (
         <>
           <div className="grid gap-6 lg:grid-cols-[1fr_240px]">
@@ -536,7 +609,7 @@ export function ResearchView({ initialId }: { initialId?: string }) {
               <Report asset={asset} reportType={lastType} tokenReport={tokenReport} />
             </div>
             <aside className="hidden space-y-4 lg:block">
-              <ReportNav />
+              <ReportNav reportType={lastType} />
               <ReportHistory history={history} onOpen={openHistory} onDownload={downloadHistory} onDelete={removeReport} compact />
             </aside>
           </div>
@@ -561,6 +634,7 @@ function Report({
 }) {
   const { requireWallet, isPro, openUpgrade } = useAuth()
   const r = tokenReport?.report ?? getResearch(asset)
+  const isDeep = reportType === "deep"
 
   function requireProExport(fn: () => void) {
     requireWallet(() => {
@@ -589,13 +663,15 @@ function Report({
 
   return (
     <div className="space-y-6">
-      {/* Section 3 鈥?Report header */}
+      {/* Section 3 - Report header */}
       <Panel className="p-5 lg:p-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-4">
             <TokenAvatar id={asset.id} symbol={asset.symbol} color={asset.color} size={48} />
             <div>
-              <h2 className="text-xl font-semibold text-foreground">{asset.name} Research Report</h2>
+              <h2 className="text-xl font-semibold text-foreground">
+                {asset.name} {isDeep ? "Advanced Research" : "Quick Analysis"}
+              </h2>
               <p className="text-sm text-muted-foreground">
                 {asset.symbol} / {asset.category} / Ranked #{asset.rank}
               </p>
@@ -612,13 +688,13 @@ function Report({
         </div>
         <div className="mt-4 grid grid-cols-2 gap-4 border-t border-border pt-4 text-xs sm:grid-cols-4">
           <Meta label="Report Type" value={reportTypeLabel[reportType]} />
-          <Meta label="Generated" value={tokenReport ? new Date(tokenReport.generatedAt).toLocaleString() : "Today"} />
+          <Meta label="Generated" value={tokenReport ? new Date(tokenReport.generatedAt).toLocaleString("en-US") : "Today"} />
           <Meta label="Data Sources" value={tokenReport?.cacheStatus === "hit" ? "Cached report" : "Market data + news"} />
-          <Meta label="Coverage" value="Fundamentals / Market / Risk" />
+          <Meta label="Coverage" value={isDeep ? "Market / Macro / Financial / Risk" : "Summary / Market / Risk"} />
         </div>
       </Panel>
 
-      {/* Section 4 鈥?Executive summary */}
+      {/* Section 4 - Executive summary */}
       <Panel id="exec-summary" className="scroll-mt-24 overflow-hidden">
         <div className="relative">
           <div className="absolute -right-10 -top-10 size-40 rounded-full bg-primary/10 blur-3xl" />
@@ -648,28 +724,43 @@ function Report({
         </div>
       </Panel>
 
-      {/* Section 5 鈥?Fundamental analysis */}
-      <Panel id="fundamentals" className="scroll-mt-24">
-        <PanelHeader title="Fundamental Analysis" icon={Boxes} />
-        <div className="grid gap-px bg-border/60 md:grid-cols-2">
-          {r.fundamentals.map((f) => (
-            <div key={f.title} className="bg-card p-5">
-              <p className="text-sm font-semibold text-foreground">{f.title}</p>
-              <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{f.description}</p>
-              <div className="mt-4 flex flex-wrap gap-x-6 gap-y-2">
-                {f.details.map((d) => (
-                  <div key={d.label}>
-                    <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{d.label}</p>
-                    <p className="text-sm font-medium text-foreground">{d.value}</p>
-                  </div>
-                ))}
+      {isDeep && (
+        <Panel id="fundamentals" className="scroll-mt-24 overflow-hidden">
+          <PanelHeader
+            title="Fundamental Analysis"
+            icon={Boxes}
+            action={<span className="text-xs text-muted-foreground">{r.fundamentals.length} dimensions</span>}
+          />
+          <div className="border-b border-border bg-surface/50 px-5 py-4">
+            <p className="max-w-3xl text-sm leading-relaxed text-muted-foreground">
+              Full analysis expands the quick view into project quality, economic context, liquidity quality, sector fit and financial durability.
+            </p>
+          </div>
+          <div className="grid gap-4 p-5 md:grid-cols-2">
+            {r.fundamentals.map((f) => (
+              <div key={f.title} className="rounded-xl border border-border bg-surface p-5">
+                <div className="flex items-start justify-between gap-3">
+                  <p className="text-sm font-semibold text-foreground">{f.title}</p>
+                  <span className="rounded-md bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary ring-1 ring-primary/20">
+                    Full
+                  </span>
+                </div>
+                <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{f.description}</p>
+                <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                  {f.details.map((d) => (
+                    <div key={d.label} className="rounded-lg border border-border bg-card px-3 py-2">
+                      <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{d.label}</p>
+                      <p className="text-sm font-medium text-foreground">{d.value}</p>
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
-      </Panel>
+            ))}
+          </div>
+        </Panel>
+      )}
 
-      {/* Section 6 鈥?Market position signals */}
+      {/* Section 6 - Market position signals */}
       <Panel id="market" className="scroll-mt-24">
         <PanelHeader title="Market Position" icon={LineChart} />
         <div className="grid gap-4 p-5 sm:grid-cols-2 lg:grid-cols-3">
@@ -685,69 +776,124 @@ function Report({
         </div>
       </Panel>
 
-      {/* Section 7 鈥?Ecosystem analysis */}
-      <Panel id="ecosystem" className="scroll-mt-24">
-        <PanelHeader title="Ecosystem Analysis" icon={Network} />
-        <div className="grid gap-5 p-5 lg:grid-cols-[1fr_1.4fr] lg:p-6">
-          <div className="grid grid-cols-2 gap-4">
+      {isDeep && (
+        <Panel id="macro" className="scroll-mt-24 overflow-hidden">
+          <PanelHeader title="Macro & Economic Context" icon={Activity} />
+          <div className="grid gap-px bg-border/60 lg:grid-cols-[1.2fr_1fr]">
+            <div className="bg-card p-5 lg:p-6">
+              <p className="text-xs font-semibold uppercase tracking-wide text-accent">Macro Thesis</p>
+              <p className="mt-3 text-sm leading-relaxed text-foreground/90">
+                {asset.name} is evaluated against broad crypto liquidity, BTC-led market structure, category rotation and the current risk cycle. This section is intended to separate asset-specific strength from market-wide beta.
+              </p>
+              <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                <DeepMetric label="Risk Cycle" value={asset.change24h >= 0 ? "Constructive" : "Defensive"} />
+                <DeepMetric label="Macro Sensitivity" value={asset.rank <= 10 ? "Major asset beta" : "Alt liquidity beta"} />
+              </div>
+            </div>
+            <div className="grid gap-px bg-border/60 sm:grid-cols-2 lg:grid-cols-1">
             {[
-              ["Network Position", r.ecosystem.layer],
-              ["Developer Activity", r.ecosystem.devActivity],
-              ["Ecosystem Growth", r.ecosystem.growth],
-              ["Applications", asset.rank <= 10 ? "1,200+" : "180+"],
-            ].map(([l, v]) => (
-              <div key={l} className="rounded-xl border border-border bg-surface p-4">
-                <p className="text-xs text-muted-foreground">{l}</p>
-                <p className="mt-1 text-sm font-medium text-foreground">{v}</p>
+              ["Liquidity Read", r.ecosystem.growth],
+              ["Sector Cycle", `${asset.category} / ${r.narratives[0] ?? "Market"}`],
+              ["Rotation Signal", asset.change24h >= 0 ? "Improving" : "Weakening"],
+            ].map(([label, value]) => (
+              <div key={label} className="bg-card p-5">
+                <p className="text-xs text-muted-foreground">{label}</p>
+                <p className="mt-1 text-sm font-medium text-foreground">{value}</p>
+              </div>
+            ))}
+            </div>
+          </div>
+        </Panel>
+      )}
+
+      {isDeep && (
+        <Panel id="financial" className="scroll-mt-24 overflow-hidden">
+          <PanelHeader
+            title="Financial & Liquidity Analysis"
+            icon={LineChart}
+            action={<span className="text-xs text-muted-foreground">Market + on-chain proxies</span>}
+          />
+          <div className="grid gap-4 p-5 sm:grid-cols-2">
+            {[...r.onchain, ...r.social].map((item) => (
+              <div key={item.label} className="rounded-xl border border-border bg-surface p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-foreground">{item.label}</p>
+                    {"hint" in item && typeof item.hint === "string" && (
+                      <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{item.hint}</p>
+                    )}
+                  </div>
+                  <ChangeBadge value={item.change} className="shrink-0" />
+                </div>
+                <p className="mt-4 text-lg font-semibold text-foreground">{item.value}</p>
               </div>
             ))}
           </div>
-          <div className="rounded-xl border border-border bg-surface p-5">
-            <p className="text-xs font-medium text-muted-foreground">Related & Competing Assets</p>
-            <div className="mt-3 space-y-2">
-              {r.related.map((rel) => {
-                const a = getAsset(rel.id)
-                return (
-                  <div key={rel.id} className="flex items-center gap-3 rounded-lg border border-border bg-card p-3">
-                    <TokenAvatar id={a.id} symbol={a.symbol} color={a.color} size={30} />
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium text-foreground">{a.name}</p>
-                      <p className="truncate text-xs text-muted-foreground">{rel.reason}</p>
+        </Panel>
+      )}
+
+      {isDeep && (
+        <Panel id="ecosystem" className="scroll-mt-24 overflow-hidden">
+          <PanelHeader title="Ecosystem Analysis" icon={Network} />
+          <div className="grid gap-px bg-border/60 lg:grid-cols-[0.9fr_1.3fr]">
+            <div className="grid grid-cols-2 gap-px bg-border/60">
+              {[
+                ["Network Position", r.ecosystem.layer],
+                ["Developer Activity", r.ecosystem.devActivity],
+                ["Ecosystem Growth", r.ecosystem.growth],
+                ["Applications", asset.rank <= 10 ? "1,200+" : "180+"],
+              ].map(([l, v]) => (
+                <div key={l} className="bg-card p-5">
+                  <p className="text-xs text-muted-foreground">{l}</p>
+                  <p className="mt-2 text-base font-semibold text-foreground">{v}</p>
+                </div>
+              ))}
+            </div>
+            <div className="bg-card p-5">
+              <p className="text-sm font-semibold text-foreground">Related & Competing Assets</p>
+              <p className="mt-1 text-xs text-muted-foreground">Contextual peers used to interpret sector positioning and narrative overlap.</p>
+              <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                {r.related.map((rel) => {
+                  const a = getAsset(rel.id)
+                  return (
+                    <div key={rel.id} className="flex items-center gap-3 rounded-lg border border-border bg-surface p-3">
+                      <TokenAvatar id={a.id} symbol={a.symbol} color={a.color} size={30} />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium text-foreground">{a.name}</p>
+                        <p className="truncate text-xs text-muted-foreground">{rel.reason}</p>
+                      </div>
+                      <span className="rounded-md bg-surface px-2 py-0.5 text-[11px] font-medium text-muted-foreground">{a.category}</span>
                     </div>
-                    <span className="rounded-md bg-surface px-2 py-0.5 text-[11px] font-medium text-muted-foreground">{a.category}</span>
-                  </div>
-                )
-              })}
+                  )
+                })}
+              </div>
             </div>
           </div>
-        </div>
-      </Panel>
+        </Panel>
+      )}
 
-      {/* Section 8 鈥?Token analysis */}
-      <Panel id="token" className="scroll-mt-24">
-        <PanelHeader title="Token Analysis" icon={Coins} />
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[520px] text-sm">
-            <tbody>
-              {[
-                ["Token Utility", r.useCase],
-                ["Circulating Supply", asset.id === "bitcoin" ? "19.7M BTC" : "Majority circulating"],
-                ["Max Supply", asset.id === "bitcoin" ? "21M BTC (fixed)" : "Variable / capped"],
-                ["Distribution", "Broadly distributed across holders"],
-                ["Unlock Schedule", asset.rank <= 5 ? "No material unlocks" : "Gradual vesting in progress"],
-                ["Inflation", asset.id === "bitcoin" ? "Disinflationary (halving)" : "Low, network-managed"],
-              ].map(([l, v], i) => (
-                <tr key={l} className={cn("border-b border-border last:border-0", i % 2 === 1 && "bg-surface/40")}>
-                  <td className="w-1/3 px-5 py-3.5 text-muted-foreground">{l}</td>
-                  <td className="px-5 py-3.5 font-medium text-foreground">{v}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Panel>
+      {isDeep && (
+        <Panel id="token" className="scroll-mt-24 overflow-hidden">
+          <PanelHeader title="Token Analysis" icon={Coins} />
+          <div className="grid gap-4 p-5 sm:grid-cols-2 lg:grid-cols-3">
+            {[
+                  ["Token Utility", r.useCase],
+                  ["Circulating Supply", asset.id === "bitcoin" ? "19.7M BTC" : "Majority circulating"],
+                  ["Max Supply", asset.id === "bitcoin" ? "21M BTC (fixed)" : "Variable / capped"],
+                  ["Distribution", "Broadly distributed across holders"],
+                  ["Unlock Schedule", asset.rank <= 5 ? "No material unlocks" : "Gradual vesting in progress"],
+                  ["Inflation", asset.id === "bitcoin" ? "Disinflationary (halving)" : "Low, network-managed"],
+            ].map(([l, v]) => (
+              <div key={l} className="rounded-xl border border-border bg-surface p-4">
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">{l}</p>
+                <p className="mt-2 text-sm font-semibold leading-relaxed text-foreground">{v}</p>
+              </div>
+            ))}
+          </div>
+        </Panel>
+      )}
 
-      {/* Section 9 鈥?Key considerations */}
+      {/* Section 9 - Key considerations */}
       <Panel id="risk" className="scroll-mt-24">
         <PanelHeader title="Key Considerations" icon={ShieldAlert} />
         <div className="divide-y divide-border">
@@ -768,7 +914,7 @@ function Report({
         </div>
       </Panel>
 
-      {/* Section 10 鈥?Analyst insights & outlook */}
+      {/* Section 10 - Analyst insights & outlook */}
       <Panel id="outlook" className="scroll-mt-24">
         <PanelHeader title="Analyst Insights & Outlook" icon={Lightbulb} />
         <div className="grid gap-px bg-border/60 sm:grid-cols-2">
@@ -792,17 +938,27 @@ function Report({
   )
 }
 
-const reportNavItems = [
+const quickReportNavItems = [
   { id: "exec-summary", label: "Executive Summary" },
   { id: "market", label: "Market Overview" },
+  { id: "risk", label: "Risk Framework" },
+  { id: "outlook", label: "Outlook" },
+]
+
+const advancedReportNavItems = [
+  { id: "exec-summary", label: "Executive Summary" },
   { id: "fundamentals", label: "Fundamentals" },
+  { id: "market", label: "Market Overview" },
+  { id: "macro", label: "Macro Context" },
+  { id: "financial", label: "Financial Analysis" },
   { id: "ecosystem", label: "Ecosystem" },
   { id: "token", label: "Token Analysis" },
   { id: "risk", label: "Risk Framework" },
   { id: "outlook", label: "Outlook" },
 ]
 
-function ReportNav() {
+function ReportNav({ reportType }: { reportType: ReportType }) {
+  const items = reportType === "deep" ? advancedReportNavItems : quickReportNavItems
   function jump(id: string) {
     document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" })
   }
@@ -811,7 +967,7 @@ function ReportNav() {
       <Panel className="p-4">
         <p className="px-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">On This Report</p>
         <nav className="mt-2 flex flex-col">
-          {reportNavItems.map((item) => (
+          {items.map((item) => (
             <button
               key={item.id}
               onClick={() => jump(item.id)}
@@ -893,7 +1049,7 @@ function ReportHistory({
 }
 
 function formatReportHistoryDate(value: string): string {
-  return new Intl.DateTimeFormat(undefined, {
+  return new Intl.DateTimeFormat("en-US", {
     month: "short",
     day: "numeric",
     hour: "2-digit",
@@ -961,6 +1117,15 @@ function ListCard({ title, tone, items }: { title: string; tone: "success" | "de
           </li>
         ))}
       </ul>
+    </div>
+  )
+}
+
+function DeepMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-xl border border-border bg-surface p-4">
+      <p className="text-xs uppercase tracking-wide text-muted-foreground">{label}</p>
+      <p className="mt-2 text-sm font-semibold leading-relaxed text-foreground">{value}</p>
     </div>
   )
 }

@@ -148,7 +148,7 @@ export function MarketView() {
   }, [activeAssets, category])
 
   const updatedLabel = useMemo(() => {
-    return new Intl.DateTimeFormat(undefined, {
+    return new Intl.DateTimeFormat("en-US", {
       hour: "2-digit",
       minute: "2-digit",
     }).format(new Date(activeUpdatedAt))
@@ -318,7 +318,7 @@ export function MarketView() {
                       </Link>
                     </td>
                     <td className="px-4 py-3.5 text-right font-medium tabular-nums text-foreground">
-                      ${a.price.toLocaleString(undefined, { maximumFractionDigits: a.price >= 1 ? 2 : 6 })}
+                    ${a.price.toLocaleString("en-US", { maximumFractionDigits: a.price >= 1 ? 2 : 6 })}
                     </td>
                     <td className="px-4 py-3.5 text-right">
                       <ChangeBadge value={a.change24h} className="justify-end" />

@@ -101,7 +101,7 @@ export function DashboardMock({ variant = "compact" }: { variant?: "compact" | "
                     <p className="text-[9px] leading-tight text-muted-foreground">{a.name}</p>
                   </div>
                   <span className="ml-auto text-[11px] font-medium tabular-nums text-foreground">
-                    ${a.price.toLocaleString()}
+                    ${a.price.toLocaleString("en-US")}
                   </span>
                   <div className="w-16">
                     <Sparkline data={a.trend} positive={a.change24h >= 0} width={64} height={20} />

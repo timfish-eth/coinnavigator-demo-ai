@@ -140,6 +140,40 @@ let cachedTopAssets: { expiresAt: number; data: TopAssetsResult } | undefined
 const cachedSearchAssets = new Map<string, { expiresAt: number; data: TopAssetsResult }>()
 const execFileAsync = promisify(execFile)
 
+const knownSearchAssets = [
+  {
+    id: "curve-dao-token",
+    symbol: "CRV",
+    name: "Curve DAO Token",
+    rank: 180,
+    tags: ["defi", "dex"],
+    aliases: ["curve", "crv", "curve dao", "curve dao token"],
+  },
+  {
+    id: "aave",
+    symbol: "AAVE",
+    name: "Aave",
+    rank: 35,
+    tags: ["defi", "lending"],
+    aliases: ["aave"],
+  },
+  {
+    id: "maker",
+    symbol: "MKR",
+    name: "Maker",
+    rank: 80,
+    tags: ["defi"],
+    aliases: ["maker", "mkr"],
+  },
+] satisfies Array<{
+  id: string
+  symbol: string
+  name: string
+  rank: number
+  tags: string[]
+  aliases: string[]
+}>
+
 async function requestJson<T>(url: URL, headers: Record<string, string> = {}): Promise<T> {
   try {
     const response = await fetch(url, {
@@ -182,8 +216,8 @@ function compactCurrency(value?: number): string {
     { suffix: "K", value: 1_000 },
   ]
   const unit = units.find((u) => abs >= u.value)
-  if (!unit) return `$${value.toLocaleString(undefined, { maximumFractionDigits: 2 })}`
-  return `$${(value / unit.value).toLocaleString(undefined, { maximumFractionDigits: 2 })}${unit.suffix}`
+  if (!unit) return `$${value.toLocaleString("en-US", { maximumFractionDigits: 2 })}`
+  return `$${(value / unit.value).toLocaleString("en-US", { maximumFractionDigits: 2 })}${unit.suffix}`
 }
 
 function compactPercent(value?: number): string {
@@ -289,6 +323,35 @@ function mapAsset(input: {
     imageUrl: input.imageUrl,
     source: input.source,
   }
+}
+
+function tokenDataUri(symbol: string, color: string): string {
+  const label = symbol.slice(0, 3).toUpperCase()
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 96 96"><rect width="96" height="96" rx="48" fill="${color}"/><text x="48" y="55" text-anchor="middle" font-family="Arial, sans-serif" font-size="28" font-weight="700" fill="white">${label}</text></svg>`
+  return `data:image/svg+xml,${encodeURIComponent(svg)}`
+}
+
+function searchKnownAssets(normalizedQuery: string): Asset[] {
+  if (!normalizedQuery) return []
+  return knownSearchAssets
+    .filter((asset) => {
+      const symbol = asset.symbol.toLowerCase()
+      const name = asset.name.toLowerCase()
+      return symbol.includes(normalizedQuery) ||
+        name.includes(normalizedQuery) ||
+        asset.aliases.some((alias) => alias.includes(normalizedQuery))
+    })
+    .map((asset) =>
+      mapAsset({
+        id: asset.id,
+        symbol: asset.symbol,
+        name: asset.name,
+        rank: asset.rank,
+        tags: asset.tags,
+        imageUrl: tokenDataUri(asset.symbol, stableColor(asset.id)),
+        source: "Demo",
+      }),
+    )
 }
 
 async function fetchCoinMarketCapTopAssets(): Promise<TopAssetsResult | undefined> {
@@ -658,6 +721,7 @@ export async function searchMarketAssets(query: string): Promise<TopAssetsResult
     const symbol = asset.symbol.toLowerCase()
     return name.includes(cacheKey) || symbol.includes(cacheKey)
   })
+  const knownMatches = searchKnownAssets(cacheKey)
 
   try {
     const [remote, symbolMatches] = await Promise.all([
@@ -665,7 +729,7 @@ export async function searchMarketAssets(query: string): Promise<TopAssetsResult
       fetchCoinGeckoMarketsBySymbol(q).catch(() => []),
     ])
     const seen = new Set<string>()
-    const assets = [...localMatches, ...symbolMatches, ...remote.assets]
+    const assets = [...localMatches, ...symbolMatches, ...remote.assets, ...knownMatches]
       .filter((asset) => {
         if (seen.has(asset.id)) return false
         seen.add(asset.id)
@@ -685,7 +749,13 @@ export async function searchMarketAssets(query: string): Promise<TopAssetsResult
     return data
   } catch {
     const data = {
-      assets: localMatches,
+      assets: [...localMatches, ...knownMatches]
+        .filter((asset, index, list) => list.findIndex((item) => item.id === asset.id) === index)
+        .sort((a, b) => {
+          const relevance = searchRelevance(a, cacheKey) - searchRelevance(b, cacheKey)
+          if (relevance !== 0) return relevance
+          return a.rank - b.rank
+        }),
       source: topAssets.source,
       updatedAt: new Date().toISOString(),
     }

@@ -90,10 +90,11 @@ export async function generateResearchWithLlm(input: {
   asset: Asset
   baseResearch: Research
   news: MarketNewsItem[]
+  reportType?: "quick" | "deep"
 }): Promise<Partial<Research>> {
   if (!hasConfiguredLlm()) throw new Error("No LLM provider configured")
 
-  const { asset, baseResearch, news } = input
+  const { asset, baseResearch, news, reportType = "quick" } = input
   const content = await chat([
     {
       role: "system",
@@ -103,7 +104,10 @@ export async function generateResearchWithLlm(input: {
     {
       role: "user",
       content: JSON.stringify({
-        task: "Generate a concise token research report section set.",
+        task:
+          reportType === "deep"
+            ? "Generate an advanced token research section set covering market, macroeconomic, financial, liquidity and risk dimensions."
+            : "Generate a concise token research section set focused on summary, market position and primary risks.",
         requiredJsonShape: {
           overview: "string",
           marketPosition: "string",

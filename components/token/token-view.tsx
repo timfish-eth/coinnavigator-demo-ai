@@ -67,7 +67,7 @@ export function TokenView({ asset, research: initialResearch }: { asset: Asset; 
                 <div>
                   <span className="text-muted-foreground">Price </span>
                   <span className="font-medium tabular-nums text-foreground">
-                    ${asset.price.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                    ${asset.price.toLocaleString("en-US", { maximumFractionDigits: 2 })}
                   </span>
                 </div>
                 <div>

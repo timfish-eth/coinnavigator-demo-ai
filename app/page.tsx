@@ -1,3 +1,4 @@
+import { AnnouncementModal } from "@/components/marketing/announcement-modal"
 import { MarketingNav } from "@/components/marketing/nav"
 import { CTA, Footer, Hero, HowItWorks, Membership } from "@/components/marketing/sections"
 
@@ -12,6 +13,7 @@ export default function HomePage() {
         <CTA />
       </main>
       <Footer />
+      <AnnouncementModal />
     </div>
   )
 }
