@@ -1,6 +1,11 @@
+"use client"
+
 import { cn } from "@/lib/utils"
 import { TrendingDown, TrendingUp } from "lucide-react"
 import Image from "next/image"
+import { useState } from "react"
+
+const localTokenIconIds = new Set(["arbitrum", "bitcoin", "chainlink", "ethereum", "fetch", "ondo", "render", "solana"])
 
 export function Sparkline({
   data,
@@ -115,7 +120,10 @@ export function TokenAvatar({
   imageUrl?: string
   size?: number
 }) {
-  if (imageUrl) {
+  const [failed, setFailed] = useState(false)
+  const imageSrc = imageUrl ?? (id && localTokenIconIds.has(id) ? `/tokens/${id}.png` : undefined)
+
+  if (imageSrc && !failed) {
     return (
       <span
         className="relative flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-white ring-1 ring-border"
@@ -123,35 +131,18 @@ export function TokenAvatar({
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
-          src={imageUrl}
+          src={imageSrc}
           alt={`${symbol} logo`}
           width={size}
           height={size}
           className="size-full object-cover"
           loading="lazy"
+          onError={() => setFailed(true)}
         />
       </span>
     )
   }
 
-  if (id) {
-    return (
-      <span
-        className="relative flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-white ring-1 ring-border"
-        style={{ width: size, height: size }}
-      >
-        <Image
-          src={`/tokens/${id}.png`}
-          alt={`${symbol} logo`}
-          width={size}
-          height={size}
-          className="size-full object-cover"
-          loading="lazy"
-          unoptimized
-        />
-      </span>
-    )
-  }
   return (
     <div
       className="flex shrink-0 items-center justify-center rounded-full font-semibold text-white"

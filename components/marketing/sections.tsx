@@ -162,8 +162,8 @@ const footerCols = [
   {
     title: "Community",
     links: [
-      { label: "X", href: "https://x.com", external: true },
-      { label: "Telegram", href: "https://telegram.org", external: true },
+      { label: "X", href: "https://x.com/CoinNavigator1", external: true },
+      { label: "Telegram", href: "https://t.me/CoinNavigator1", external: true },
     ],
   },
 ]

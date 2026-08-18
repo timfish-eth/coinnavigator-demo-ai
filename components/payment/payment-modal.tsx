@@ -3,7 +3,6 @@
 import { RESEARCH_PASS, truncateAddress, useAuth } from "@/components/auth/auth-context"
 import { erc20Abi } from "@/lib/contracts/erc20-abi"
 import { membershipPassAbi } from "@/lib/contracts/membership-pass-abi"
-import { formatPassPrice } from "@/lib/simulation"
 import { cn } from "@/lib/utils"
 import { Check, Loader2, ShieldCheck, Wallet, X } from "lucide-react"
 import { useCallback, useEffect, useMemo, useState } from "react"
@@ -69,9 +68,11 @@ export function PaymentModal() {
   const isProcessing = phase === "approving" || phase === "recharging"
   const tokenUnit = tokenSymbol ?? "USDT"
   const formattedPrice = useMemo(() => {
-    if (!monthlyPrice || tokenDecimals === undefined) return formatPassPrice()
+    if (!isSupportedChain) return "Unsupported network"
+    if (!membershipContractAddress) return "Contract not configured"
+    if (!monthlyPrice || tokenDecimals === undefined) return "Loading contract price..."
     return `${formatUnits(monthlyPrice, tokenDecimals)} ${tokenUnit} / ${RESEARCH_PASS.period}`
-  }, [monthlyPrice, tokenDecimals, tokenUnit])
+  }, [isSupportedChain, membershipContractAddress, monthlyPrice, tokenDecimals, tokenUnit])
   const formattedBalance = useMemo(() => {
     if (tokenBalance === undefined || tokenDecimals === undefined) return "-"
     return `${formatUnits(tokenBalance, tokenDecimals)} ${tokenUnit}`
@@ -178,7 +179,7 @@ export function PaymentModal() {
               <div className="mt-5 w-full rounded-xl border border-border bg-surface p-4 text-left text-sm">
                 <Row label="Plan" value={RESEARCH_PASS.name} />
                 <Row label="Amount" value={formattedPrice} mono />
-                <Row label="Network" value={RESEARCH_PASS.network} />
+                <Row label="Network" value={wallet?.network ?? RESEARCH_PASS.network} />
                 <Row label="Status" value="Active" />
                 {membershipExpiryLabel !== "Not active" && <Row label="Expires" value={membershipExpiryLabel} />}
               </div>
@@ -203,7 +204,7 @@ export function PaymentModal() {
                 <Row label="Plan" value={RESEARCH_PASS.name} />
                 <Row label="Price" value={formattedPrice} mono />
                 <Row label="Balance" value={balanceLoading ? "Checking..." : formattedBalance} mono />
-                <Row label="Network" value={RESEARCH_PASS.network} />
+                <Row label="Network" value={wallet?.network ?? RESEARCH_PASS.network} />
                 <Row label="From" value={wallet ? truncateAddress(wallet.address) : "-"} mono />
               </div>
 

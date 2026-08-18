@@ -32,6 +32,11 @@ async function main() {
   const [deployer] = await ethers.getSigners()
   const network = await ethers.provider.getNetwork()
   const envPath = path.resolve(process.cwd(), ".env")
+  const chainId = Number(network.chainId)
+
+  if (chainId === 56) {
+    throw new Error("This script deploys a MockERC20 test payment token and must not be used on BSC Mainnet.")
+  }
 
   console.log(`Deploying from ${deployer.address} on chain ${network.chainId}`)
 
@@ -47,9 +52,10 @@ async function main() {
   const membershipAddress = await membership.getAddress()
   console.log(`MembershipPass deployed: ${membershipAddress}`)
 
-  upsertEnvValue(envPath, "NEXT_PUBLIC_BSC_TESTNET_MEMBERSHIP_PASS_ADDRESS", membershipAddress)
-  upsertEnvValue(envPath, "NEXT_PUBLIC_MEMBERSHIP_PASS_ADDRESS", membershipAddress)
-  upsertEnvValue(envPath, "BSC_TESTNET_MOCK_USDT_ADDRESS", tokenAddress)
+  const membershipKey = chainId === 97 ? "NEXT_PUBLIC_BSC_TESTNET_MEMBERSHIP_PASS_ADDRESS" : "NEXT_PUBLIC_LOCAL_MEMBERSHIP_PASS_ADDRESS"
+  const tokenKey = chainId === 97 ? "BSC_TESTNET_MOCK_USDT_ADDRESS" : "LOCAL_MOCK_USDT_ADDRESS"
+  upsertEnvValue(envPath, membershipKey, membershipAddress)
+  upsertEnvValue(envPath, tokenKey, tokenAddress)
 
   const approveTx = await token.approve(membershipAddress, MONTHLY_PRICE)
   await approveTx.wait()

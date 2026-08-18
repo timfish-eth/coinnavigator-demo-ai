@@ -10,7 +10,6 @@ export type Membership = "Free" | "Pro"
 
 export const RESEARCH_PASS = {
   name: "Research Pass",
-  price: "9.9 USDT",
   period: "30 Days",
   network: "BSC",
 } as const
@@ -46,13 +45,6 @@ export function simulatePayment(
   const delayMs = options.delayMs ?? SIMULATED_PAYMENT_DELAY_MS
   options.onStart?.()
   return new Promise((resolve) => setTimeout(resolve, delayMs))
-}
-
-/**
- * Format the Research Pass price for display.
- */
-export function formatPassPrice(): string {
-  return `${RESEARCH_PASS.price} / ${RESEARCH_PASS.period}`
 }
 
 /**

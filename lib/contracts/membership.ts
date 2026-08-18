@@ -13,11 +13,7 @@ function asAddress(value: string | undefined): Address | undefined {
 
 export function getMembershipPassAddress(chainId?: number): Address | undefined {
   if (chainId === bsc.id) {
-    return (
-      asAddress(process.env.NEXT_PUBLIC_BSC_MEMBERSHIP_PASS_ADDRESS) ??
-      asAddress(process.env.NEXT_PUBLIC_MEMBERSHIP_PASS_ADDRESS) ??
-      getPublicMembershipPassAddress(chainId)
-    )
+    return asAddress(process.env.NEXT_PUBLIC_BSC_MEMBERSHIP_PASS_ADDRESS)
   }
 
   if (chainId === bscTestnet.id) {

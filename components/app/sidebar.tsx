@@ -133,14 +133,6 @@ function SidebarWallet({ wallet }: { wallet: Wallet }) {
           </div>
           <nav className="py-1.5">
             <Link
-              href="/settings"
-              onClick={() => setOpen(false)}
-              className="flex items-center gap-3 px-4 py-2.5 text-sm text-foreground/90 transition-colors hover:bg-white/5"
-            >
-              <WalletIcon className="size-4 text-muted-foreground" />
-              Wallet
-            </Link>
-            <Link
               href="/membership"
               onClick={() => setOpen(false)}
               className="flex items-center gap-3 px-4 py-2.5 text-sm text-foreground/90 transition-colors hover:bg-white/5"

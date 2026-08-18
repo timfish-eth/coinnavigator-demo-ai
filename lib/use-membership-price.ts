@@ -3,7 +3,7 @@
 import { useAuth } from "@/components/auth/auth-context"
 import { erc20Abi } from "@/lib/contracts/erc20-abi"
 import { membershipPassAbi } from "@/lib/contracts/membership-pass-abi"
-import { RESEARCH_PASS, formatPassPrice } from "@/lib/simulation"
+import { RESEARCH_PASS } from "@/lib/simulation"
 import { useMemo } from "react"
 import { formatUnits, type Address } from "viem"
 import { useReadContract } from "wagmi"
@@ -38,7 +38,9 @@ export function useMembershipPriceLabel() {
   })
 
   return useMemo(() => {
-    if (!monthlyPrice || tokenDecimals === undefined) return formatPassPrice()
+    if (!isSupportedChain) return "Unsupported network"
+    if (!membershipContractAddress) return "Contract not configured"
+    if (!monthlyPrice || tokenDecimals === undefined) return "Loading contract price..."
     return `${formatUnits(monthlyPrice, tokenDecimals)} ${tokenSymbol ?? "USDT"} / ${RESEARCH_PASS.period}`
-  }, [monthlyPrice, tokenDecimals, tokenSymbol])
+  }, [isSupportedChain, membershipContractAddress, monthlyPrice, tokenDecimals, tokenSymbol])
 }
