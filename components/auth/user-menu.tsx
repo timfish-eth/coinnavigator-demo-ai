@@ -2,6 +2,7 @@
 
 import { truncateAddress, useAuth } from "@/components/auth/auth-context"
 import { WalletGlyph } from "@/components/auth/wallet-glyph"
+import { isBscTestnetEnabled } from "@/config/public-chain-addresses"
 import { bsc, bscTestnet } from "wagmi/chains"
 import { CalendarClock, Crown, LogOut, Wallet as WalletIcon } from "lucide-react"
 import { useRouter } from "next/navigation"
@@ -123,13 +124,15 @@ export function UserMenu() {
               <span>BSC Mainnet</span>
               {currentChainId === bsc.id && <span className="size-2 rounded-full bg-success" />}
             </button>
-            <button
-              onClick={() => switchChain(bscTestnet.id)}
-              className={`flex w-full items-center justify-between px-4 py-2.5 text-sm transition-colors hover:bg-white/5 ${currentChainId === bscTestnet.id ? "text-foreground" : "text-muted-foreground"}`}
-            >
-              <span>BSC Testnet</span>
-              {currentChainId === bscTestnet.id && <span className="size-2 rounded-full bg-success" />}
-            </button>
+            {isBscTestnetEnabled() && (
+              <button
+                onClick={() => switchChain(bscTestnet.id)}
+                className={`flex w-full items-center justify-between px-4 py-2.5 text-sm transition-colors hover:bg-white/5 ${currentChainId === bscTestnet.id ? "text-foreground" : "text-muted-foreground"}`}
+              >
+                <span>BSC Testnet</span>
+                {currentChainId === bscTestnet.id && <span className="size-2 rounded-full bg-success" />}
+              </button>
+            )}
           </div>
 
           <div className="py-1.5">

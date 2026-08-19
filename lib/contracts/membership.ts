@@ -1,11 +1,11 @@
 import { bsc, bscTestnet } from "wagmi/chains"
 import type { Address } from "viem"
-import { getPublicMembershipPassAddress } from "@/config/public-chain-addresses"
+import { getPublicMembershipPassAddress, isBscTestnetEnabled } from "@/config/public-chain-addresses"
 
 export const MEMBERSHIP_MONTHS = 1n
 
 export function getMembershipPassAddress(chainId?: number): Address | undefined {
-  if (chainId === bsc.id || chainId === bscTestnet.id) return getPublicMembershipPassAddress(chainId)
+  if (chainId === bsc.id || (chainId === bscTestnet.id && isBscTestnetEnabled())) return getPublicMembershipPassAddress(chainId)
   return undefined
 }
 

@@ -8,6 +8,7 @@ import {
 } from "@/lib/simulation"
 import { membershipPassAbi } from "@/lib/contracts/membership-pass-abi"
 import { formatMembershipExpiry, getMembershipPassAddress } from "@/lib/contracts/membership"
+import { isBscTestnetEnabled } from "@/config/public-chain-addresses"
 import { createContext, useCallback, useContext, useMemo, useRef, useState } from "react"
 import { useAccount, useAccountEffect, useDisconnect, useReadContract, useSwitchChain } from "wagmi"
 import { bsc, bscTestnet } from "wagmi/chains"
@@ -103,7 +104,7 @@ type AuthContextValue = {
 
 const AuthContext = createContext<AuthContextValue | null>(null)
 
-const supportedChains = [bsc, bscTestnet]
+const supportedChains = isBscTestnetEnabled() ? [bsc, bscTestnet] : [bsc]
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const account = useAccount()
@@ -161,7 +162,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const wallet: Wallet | null = useMemo(() => {
     if (!account.isConnected || !account.address) return null
-    const network = account.chain?.name ?? (currentChainId === bsc.id ? "BSC Mainnet" : currentChainId === bscTestnet.id ? "BSC Testnet" : "Unknown")
+    const network = account.chain?.name ?? (currentChainId === bsc.id ? "BSC Mainnet" : currentChainId === bscTestnet.id && isBscTestnetEnabled() ? "BSC Testnet" : "Unknown")
     const walletId = account.connector?.id ? (connectorIdToWalletId[account.connector.id] ?? "metamask") : "metamask"
     return {
       address: account.address,
