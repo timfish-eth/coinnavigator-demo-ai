@@ -6,6 +6,7 @@ import { useAuth } from "@/components/auth/auth-context"
 import { TokenAvatar } from "@/components/primitives"
 import { buttonVariants } from "@/components/ui/button"
 import type { Asset } from "@/lib/data"
+import { reportNetworkLabel } from "@/lib/report-network"
 import type { TokenReport } from "@/lib/research-cache"
 import { cn } from "@/lib/utils"
 import { ArrowUpRight, Compass, Download, FileText, LibraryBig, LineChart, Loader2, Search, ShieldAlert, X, Zap } from "lucide-react"
@@ -24,6 +25,7 @@ const typeMeta: Record<DisplayReportType, { icon: typeof Zap; tone: string }> = 
 type StoredReportSummary = {
   id: string
   asset: Asset
+  chainId: number
   reportType: "quick" | "deep"
   generatedAt: string
   expiresAt: string
@@ -82,6 +84,7 @@ export function LibraryView() {
         report.asset.category,
         report.summary,
         reportTypeLabel(report.reportType),
+        reportNetworkLabel(report.chainId),
       ].some((value) => value.toLowerCase().includes(term))
       return matchesFilter && matchesSearch
     })
@@ -228,6 +231,9 @@ export function LibraryView() {
                   <span className={cn("inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-medium ring-1", meta.tone)}>
                     <meta.icon className="size-3" /> {type}
                   </span>
+                  <span className="rounded-md bg-surface px-2 py-0.5 text-[11px] text-muted-foreground ring-1 ring-border">
+                    {reportNetworkLabel(r.chainId)}
+                  </span>
                   <span className="text-[11px] text-muted-foreground">{new Date(r.generatedAt).toLocaleDateString("en-US")}</span>
                 </div>
                 <p className="mt-3 flex-1 text-sm leading-relaxed text-muted-foreground text-pretty">{r.summary}</p>
@@ -306,7 +312,7 @@ function ReportReader({ report, onClose, onExport }: { report: TokenReport; onCl
             <div className="min-w-0">
               <h2 className="truncate text-lg font-semibold text-foreground">{asset.name} {type}</h2>
               <p className="text-xs text-muted-foreground">
-                {asset.symbol} / {asset.category} / {new Date(report.generatedAt).toLocaleString("en-US")}
+                {asset.symbol} / {asset.category} / {reportNetworkLabel(report.chainId)} / {new Date(report.generatedAt).toLocaleString("en-US")}
               </p>
             </div>
           </div>
@@ -334,6 +340,7 @@ function ReportReader({ report, onClose, onExport }: { report: TokenReport; onCl
             <div className="mt-5 grid gap-3 sm:grid-cols-3">
               <Metric label="Composite Rating" value={`${research.compositeScore}/10`} />
               <Metric label="Report Type" value={type} />
+              <Metric label="Network" value={reportNetworkLabel(report.chainId)} />
               <Metric label="Data Sources" value={report.cacheStatus === "hit" ? "Stored report" : "Market data + news"} />
             </div>
           </Panel>

@@ -1,6 +1,7 @@
 import { mkdir, readFile, readdir, rename, writeFile } from "fs/promises"
 import path from "path"
 
+import { normalizeReportChainId } from "@/lib/report-network"
 import type { TokenReport } from "@/lib/research-cache"
 
 type StoredTokenReport = Omit<TokenReport, "cacheStatus">
@@ -8,6 +9,7 @@ type StoredTokenReport = Omit<TokenReport, "cacheStatus">
 export type StoredReportSummary = {
   id: string
   asset: StoredTokenReport["asset"]
+  chainId: number
   reportType: StoredTokenReport["reportType"]
   generatedAt: string
   expiresAt: string
@@ -68,7 +70,10 @@ export async function readStoredTokenReport(reportKey: string): Promise<StoredTo
     if (!parsed.id || !parsed.asset || !parsed.report || !parsed.generatedAt || !parsed.expiresAt || !parsed.reportType) {
       return null
     }
-    return parsed as StoredTokenReport
+    return {
+      ...parsed,
+      chainId: normalizeReportChainId(parsed.chainId),
+    } as StoredTokenReport
   } catch {
     return null
   }
@@ -94,6 +99,7 @@ export async function listStoredTokenReports(): Promise<StoredReportSummary[]> {
             return {
               id: parsed.id,
               asset: parsed.asset,
+              chainId: normalizeReportChainId(parsed.chainId),
               reportType: parsed.reportType,
               generatedAt: parsed.generatedAt,
               expiresAt: parsed.expiresAt,

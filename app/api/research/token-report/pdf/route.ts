@@ -1,4 +1,5 @@
 import { getOrCreateTokenReport, getStoredTokenReport, normalizeReportType } from "@/lib/research-cache"
+import { normalizeReportChainId } from "@/lib/report-network"
 import { readStoredReportPdf, readStoredTokenReport, withReportLock, writeStoredReportPdf } from "@/lib/report-storage"
 import { NextRequest, NextResponse } from "next/server"
 
@@ -271,10 +272,11 @@ export async function GET(request: NextRequest) {
   const query = request.nextUrl.searchParams.get("q") ?? undefined
   const reportTypeParam = request.nextUrl.searchParams.get("type")
   const reportType = normalizeReportType(reportTypeParam)
+  const chainId = normalizeReportChainId(request.nextUrl.searchParams.get("chainId"))
   const generatedAt = request.nextUrl.searchParams.get("date") ?? undefined
   const cachedReportById = reportId ? await readStoredTokenReport(reportId) : null
-  const cachedReport = cachedReportById ?? (assetId && generatedAt ? await getStoredTokenReport({ assetId, reportType, generatedAt }) : null)
-  const tokenReport = cachedReport ?? await getOrCreateTokenReport({ assetId, query, reportType })
+  const cachedReport = cachedReportById ?? (assetId && generatedAt ? await getStoredTokenReport({ assetId, chainId, reportType, generatedAt }) : null)
+  const tokenReport = cachedReport ?? await getOrCreateTokenReport({ assetId, query, chainId, reportType })
   const { asset, report } = tokenReport
   const reportKey = tokenReport.id
   const effectiveReportType = tokenReport.reportType

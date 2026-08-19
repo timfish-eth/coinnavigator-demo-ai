@@ -2,6 +2,7 @@ import { getMarketAnalysis, type MarketAnalysis } from "@/lib/ai-analysis"
 import { getResearch, type Asset, type Impact, type Research, type RiskLevel } from "@/lib/data"
 import { generateResearchWithLlm } from "@/lib/llm"
 import { getMarketAsset, searchMarketAssets } from "@/lib/market-data"
+import { DEFAULT_REPORT_CHAIN_ID, normalizeReportChainId } from "@/lib/report-network"
 import { readStoredTokenReport, withReportLock, writeStoredTokenReport } from "@/lib/report-storage"
 import { getDailyTokenNews } from "@/lib/token-news"
 
@@ -19,6 +20,7 @@ export type TokenReport = {
   id: string
   asset: Asset
   report: Research
+  chainId: number
   reportType: "quick" | "deep"
   generatedAt: string
   expiresAt: string
@@ -58,8 +60,19 @@ function dateKey(date = new Date()): string {
   return date.toISOString().slice(0, 10)
 }
 
-function reportKey(assetId: string, reportType: TokenReport["reportType"], day = dateKey()): string {
+function reportKey(chainId: number, assetId: string, reportType: TokenReport["reportType"], day = dateKey()): string {
+  return `chain-${normalizeReportChainId(chainId)}:${assetId}:${reportType}:${day}:${TOKEN_REPORT_TEMPLATE_VERSION}`
+}
+
+function legacyReportKey(assetId: string, reportType: TokenReport["reportType"], day = dateKey()): string {
   return `${assetId}:${reportType}:${day}:${TOKEN_REPORT_TEMPLATE_VERSION}`
+}
+
+function withReportDefaults(report: StoredTokenReport): StoredTokenReport {
+  return {
+    ...report,
+    chainId: normalizeReportChainId(report.chainId),
+  }
 }
 
 function isExpired(report: StoredTokenReport, now = Date.now()): boolean {
@@ -327,19 +340,29 @@ export async function getTokenResearchSnapshot(asset: Asset): Promise<Research> 
 
 export async function getStoredTokenReport(input: {
   assetId: string
+  chainId?: number
   reportType: TokenReport["reportType"]
   generatedAt?: string
 }): Promise<TokenReport | null> {
-  const key = reportKey(input.assetId, input.reportType, input.generatedAt?.slice(0, 10) ?? dateKey())
+  const chainId = normalizeReportChainId(input.chainId)
+  const day = input.generatedAt?.slice(0, 10) ?? dateKey()
+  const key = reportKey(chainId, input.assetId, input.reportType, day)
+  const fallbackKey = chainId === DEFAULT_REPORT_CHAIN_ID ? legacyReportKey(input.assetId, input.reportType, day) : undefined
   const db = researchStore()
   const cached = db.tokenReports.get(key)
   if (cached && !isExpired(cached)) return { ...cached, cacheStatus: "hit" }
 
-  const storedOnDisk = await readStoredTokenReport(key)
-  if (!storedOnDisk || isExpired(storedOnDisk)) return null
+  const legacyCached = fallbackKey ? db.tokenReports.get(fallbackKey) : undefined
+  if (legacyCached && !isExpired(legacyCached)) return { ...withReportDefaults(legacyCached), cacheStatus: "hit" }
 
-  db.tokenReports.set(key, storedOnDisk)
-  return { ...storedOnDisk, cacheStatus: "hit" }
+  const storedOnDisk = await readStoredTokenReport(key)
+  const legacyStoredOnDisk = !storedOnDisk && fallbackKey ? await readStoredTokenReport(fallbackKey) : null
+  const reportOnDisk = storedOnDisk ?? legacyStoredOnDisk
+  if (!reportOnDisk || isExpired(reportOnDisk)) return null
+
+  const normalized = withReportDefaults(reportOnDisk)
+  db.tokenReports.set(key, normalized)
+  return { ...normalized, cacheStatus: "hit" }
 }
 
 export async function resolveTokenForReport(input: { assetId?: string; query?: string }): Promise<Asset> {
@@ -366,31 +389,46 @@ export async function resolveTokenForReport(input: { assetId?: string; query?: s
 export async function getOrCreateTokenReport(input: {
   assetId?: string
   query?: string
+  chainId?: number
   reportType?: TokenReport["reportType"]
 }): Promise<TokenReport> {
   pruneExpiredTokenReports()
 
+  const chainId = normalizeReportChainId(input.chainId)
   const reportType = input.reportType ?? "quick"
   const asset = await resolveTokenForReport(input)
-  const key = reportKey(asset.id, reportType)
+  const key = reportKey(chainId, asset.id, reportType)
+  const fallbackKey = chainId === DEFAULT_REPORT_CHAIN_ID ? legacyReportKey(asset.id, reportType) : undefined
   const db = researchStore()
   const cached = db.tokenReports.get(key)
   if (cached && !isExpired(cached)) return { ...cached, cacheStatus: "hit" }
 
+  const legacyCached = fallbackKey ? db.tokenReports.get(fallbackKey) : undefined
+  if (legacyCached && !isExpired(legacyCached)) return { ...withReportDefaults(legacyCached), cacheStatus: "hit" }
+
   const storedOnDisk = await readStoredTokenReport(key)
-  if (storedOnDisk && !isExpired(storedOnDisk)) {
-    db.tokenReports.set(key, storedOnDisk)
-    return { ...storedOnDisk, cacheStatus: "hit" }
+  const legacyStoredOnDisk = !storedOnDisk && fallbackKey ? await readStoredTokenReport(fallbackKey) : null
+  const reportOnDisk = storedOnDisk ?? legacyStoredOnDisk
+  if (reportOnDisk && !isExpired(reportOnDisk)) {
+    const normalized = withReportDefaults(reportOnDisk)
+    db.tokenReports.set(key, normalized)
+    return { ...normalized, cacheStatus: "hit" }
   }
 
   return withReportLock(`token-report:${key}`, async () => {
     const cachedAfterWait = db.tokenReports.get(key)
     if (cachedAfterWait && !isExpired(cachedAfterWait)) return { ...cachedAfterWait, cacheStatus: "hit" }
 
+    const legacyCachedAfterWait = fallbackKey ? db.tokenReports.get(fallbackKey) : undefined
+    if (legacyCachedAfterWait && !isExpired(legacyCachedAfterWait)) return { ...withReportDefaults(legacyCachedAfterWait), cacheStatus: "hit" }
+
     const diskAfterWait = await readStoredTokenReport(key)
-    if (diskAfterWait && !isExpired(diskAfterWait)) {
-      db.tokenReports.set(key, diskAfterWait)
-      return { ...diskAfterWait, cacheStatus: "hit" }
+    const legacyDiskAfterWait = !diskAfterWait && fallbackKey ? await readStoredTokenReport(fallbackKey) : null
+    const reportAfterWait = diskAfterWait ?? legacyDiskAfterWait
+    if (reportAfterWait && !isExpired(reportAfterWait)) {
+      const normalized = withReportDefaults(reportAfterWait)
+      db.tokenReports.set(key, normalized)
+      return { ...normalized, cacheStatus: "hit" }
     }
 
     const generatedAt = new Date()
@@ -420,6 +458,7 @@ export async function getOrCreateTokenReport(input: {
       id: key,
       asset,
       report,
+      chainId,
       reportType,
       generatedAt: generatedAt.toISOString(),
       expiresAt: new Date(generatedAt.getTime() + REPORT_TTL_MS).toISOString(),

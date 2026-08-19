@@ -7,6 +7,7 @@ import { buttonVariants } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/components/auth/auth-context"
 import { aiSignal, assets, getAsset, getResearch, type Asset, type RiskLevel } from "@/lib/data"
+import { normalizeReportChainId, reportNetworkLabel } from "@/lib/report-network"
 import type { TokenReport } from "@/lib/research-cache"
 import { useReportHistory, type StoredReportRecord } from "@/lib/use-report-history"
 import Link from "next/link"
@@ -82,7 +83,7 @@ const popular = [
 ]
 
 export function ResearchView({ initialId, initialType, initialDate }: { initialId?: string; initialType?: ReportType; initialDate?: string }) {
-  const { requireWallet, isConnected, isPro, openUpgrade } = useAuth()
+  const { requireWallet, isConnected, isPro, openUpgrade, currentChainId } = useAuth()
   const preset = initialId ? assets.find((a) => a.id === initialId) : undefined
   const [query, setQuery] = useState(preset?.name ?? initialId ?? "")
   const [status, setStatus] = useState<Status>("idle")
@@ -98,10 +99,11 @@ export function ResearchView({ initialId, initialType, initialDate }: { initialI
   const { records: history, upsertReport, removeReport } = useReportHistory()
   const searchRef = useRef<HTMLInputElement>(null)
   const trimmedQuery = query.trim()
+  const reportChainId = normalizeReportChainId(currentChainId)
   const selectedHistory = useMemo(() => {
     if (!selectedAsset) return []
-    return history.filter((record) => record.assetId === selectedAsset.id)
-  }, [history, selectedAsset])
+    return history.filter((record) => record.assetId === selectedAsset.id && normalizeReportChainId(record.chainId) === reportChainId)
+  }, [history, reportChainId, selectedAsset])
 
   useEffect(() => {
     const q = trimmedQuery
@@ -155,7 +157,7 @@ export function ResearchView({ initialId, initialType, initialDate }: { initialI
     }, 620)
 
     try {
-      const params = new URLSearchParams({ type: effectiveReportType })
+      const params = new URLSearchParams({ type: effectiveReportType, chainId: String(reportChainId) })
       if (input?.assetId) params.set("asset", input.assetId)
       else if (input?.asset) params.set("asset", input.asset.id)
       else params.set("q", searchTerm)
@@ -172,6 +174,7 @@ export function ResearchView({ initialId, initialType, initialDate }: { initialI
       setStatus("done")
       upsertReport({
         asset: data.asset,
+        chainId: data.chainId,
         reportType: data.reportType,
         generatedAt: data.generatedAt,
         expiresAt: data.expiresAt,
@@ -232,6 +235,7 @@ export function ResearchView({ initialId, initialType, initialDate }: { initialI
       const params = new URLSearchParams({
         asset: record.assetId,
         type: record.reportType,
+        chainId: String(record.chainId),
         cache: "only",
         date: record.generatedAt.slice(0, 10),
       })
@@ -259,6 +263,7 @@ export function ResearchView({ initialId, initialType, initialDate }: { initialI
       symbol: preset?.symbol ?? initialId.toUpperCase(),
       color: preset?.color ?? "#64748b",
       imageUrl: preset?.imageUrl,
+      chainId: reportChainId,
       reportType: initialType,
       generatedAt: initialDate,
       expiresAt: `${initialDate.slice(0, 10)}T23:59:59.000Z`,
@@ -270,7 +275,7 @@ export function ResearchView({ initialId, initialType, initialDate }: { initialI
   async function downloadHistory(record: StoredReportRecord) {
     requireWallet(() => runProOnly(() => {
       void (async () => {
-        const params = new URLSearchParams({ asset: record.assetId, type: record.reportType, date: record.generatedAt.slice(0, 10) })
+        const params = new URLSearchParams({ asset: record.assetId, type: record.reportType, chainId: String(record.chainId), date: record.generatedAt.slice(0, 10) })
         const response = await fetch(`/api/research/token-report/pdf?${params.toString()}`)
         if (!response.ok) return
         const blob = await response.blob()
@@ -632,9 +637,10 @@ function Report({
   reportType: ReportType
   tokenReport?: TokenReport
 }) {
-  const { requireWallet, isPro, openUpgrade } = useAuth()
+  const { requireWallet, isPro, openUpgrade, currentChainId } = useAuth()
   const r = tokenReport?.report ?? getResearch(asset)
   const isDeep = reportType === "deep"
+  const reportChainId = normalizeReportChainId(tokenReport?.chainId ?? currentChainId)
 
   function requireProExport(fn: () => void) {
     requireWallet(() => {
@@ -647,7 +653,9 @@ function Report({
   }
 
   async function downloadPdf() {
-    const params = new URLSearchParams({ asset: asset.id, type: reportType })
+    const params = tokenReport?.id
+      ? new URLSearchParams({ id: tokenReport.id })
+      : new URLSearchParams({ asset: asset.id, type: reportType, chainId: String(reportChainId) })
     const response = await fetch(`/api/research/token-report/pdf?${params.toString()}`)
     if (!response.ok) return
     const blob = await response.blob()
@@ -688,6 +696,7 @@ function Report({
         </div>
         <div className="mt-4 grid grid-cols-2 gap-4 border-t border-border pt-4 text-xs sm:grid-cols-4">
           <Meta label="Report Type" value={reportTypeLabel[reportType]} />
+          <Meta label="Network" value={reportNetworkLabel(reportChainId)} />
           <Meta label="Generated" value={tokenReport ? new Date(tokenReport.generatedAt).toLocaleString("en-US") : "Today"} />
           <Meta label="Data Sources" value={tokenReport?.cacheStatus === "hit" ? "Cached report" : "Market data + news"} />
           <Meta label="Coverage" value={isDeep ? "Market / Macro / Financial / Risk" : "Summary / Market / Risk"} />
@@ -1014,7 +1023,7 @@ function ReportHistory({
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium text-foreground">{h.assetName} Report</p>
                   <p className="text-xs text-muted-foreground">
-                    {formatReportHistoryDate(h.generatedAt)} / {h.reportType === "deep" ? "Advanced" : "Quick"}
+                    {formatReportHistoryDate(h.generatedAt)} / {reportNetworkLabel(h.chainId)} / {h.reportType === "deep" ? "Advanced" : "Quick"}
                   </p>
                 </div>
               </div>

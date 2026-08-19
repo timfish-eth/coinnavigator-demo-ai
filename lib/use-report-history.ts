@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useSyncExternalStore } from "react"
 import type { Asset } from "@/lib/data"
+import { DEFAULT_REPORT_CHAIN_ID, normalizeReportChainId } from "@/lib/report-network"
 
 const STORAGE_KEY = "coinnavigator.research.history"
 const UPDATED_EVENT = "coinnavigator:report-history-updated"
@@ -14,6 +15,7 @@ export type StoredReportRecord = {
   id: string
   assetId: string
   assetName: string
+  chainId: number
   symbol: string
   color: string
   imageUrl?: string
@@ -30,6 +32,7 @@ function isRecord(value: unknown): value is StoredReportRecord {
       record.assetId &&
       record.assetName &&
       record.symbol &&
+      (record.chainId === undefined || typeof record.chainId === "number") &&
       record.color &&
       record.reportType &&
       record.generatedAt &&
@@ -45,6 +48,7 @@ function parseRecords(raw: string): StoredReportRecord[] {
     const seen = new Set<string>()
     return parsed
       .filter(isRecord)
+      .map((record) => ({ ...record, chainId: normalizeReportChainId(record.chainId ?? DEFAULT_REPORT_CHAIN_ID) }))
       .filter((record) => new Date(record.expiresAt).getTime() > now)
       .filter((record) => {
         if (seen.has(record.id)) return false
@@ -98,13 +102,15 @@ export function useReportHistory() {
     pruneExpiredRecords()
   }, [])
 
-  const upsertReport = useCallback((input: { asset: Asset; reportType: StoredReportType; generatedAt: string; expiresAt: string }) => {
+  const upsertReport = useCallback((input: { asset: Asset; chainId: number; reportType: StoredReportType; generatedAt: string; expiresAt: string }) => {
     const current = parseRecords(getSnapshot())
-    const id = `${input.asset.id}:${input.reportType}:${input.generatedAt.slice(0, 10)}`
+    const chainId = normalizeReportChainId(input.chainId)
+    const id = `chain-${chainId}:${input.asset.id}:${input.reportType}:${input.generatedAt.slice(0, 10)}`
     const nextRecord: StoredReportRecord = {
       id,
       assetId: input.asset.id,
       assetName: input.asset.name,
+      chainId,
       symbol: input.asset.symbol,
       color: input.asset.color,
       imageUrl: input.asset.imageUrl,
