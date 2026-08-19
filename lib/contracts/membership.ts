@@ -4,25 +4,8 @@ import { getPublicMembershipPassAddress } from "@/config/public-chain-addresses"
 
 export const MEMBERSHIP_MONTHS = 1n
 
-const addressPattern = /^0x[a-fA-F0-9]{40}$/
-
-function asAddress(value: string | undefined): Address | undefined {
-  if (!value || !addressPattern.test(value)) return undefined
-  return value as Address
-}
-
 export function getMembershipPassAddress(chainId?: number): Address | undefined {
-  if (chainId === bsc.id) {
-    return asAddress(process.env.NEXT_PUBLIC_BSC_MEMBERSHIP_PASS_ADDRESS)
-  }
-
-  if (chainId === bscTestnet.id) {
-    return (
-      asAddress(process.env.NEXT_PUBLIC_BSC_TESTNET_MEMBERSHIP_PASS_ADDRESS) ??
-      getPublicMembershipPassAddress(chainId)
-    )
-  }
-
+  if (chainId === bsc.id || chainId === bscTestnet.id) return getPublicMembershipPassAddress(chainId)
   return undefined
 }
 
