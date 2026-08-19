@@ -365,8 +365,29 @@ export async function getStoredTokenReport(input: {
   return { ...normalized, cacheStatus: "hit" }
 }
 
-export async function resolveTokenForReport(input: { assetId?: string; query?: string }): Promise<Asset> {
-  if (input.assetId) return (await getOrCreateTokenProfile(input.assetId)).asset
+export async function resolveTokenForReport(input: { assetId?: string; query?: string; assetSnapshot?: Asset }): Promise<Asset> {
+  if (input.assetId) {
+    const profile = await getOrCreateTokenProfile(input.assetId)
+    if (profile.asset.id === input.assetId) return profile.asset
+    if (input.assetSnapshot?.id === input.assetId) {
+      const db = researchStore()
+      db.tokenProfiles.set(input.assetSnapshot.id, {
+        asset: input.assetSnapshot,
+        createdAt: new Date().toISOString(),
+      })
+      return input.assetSnapshot
+    }
+    return profile.asset
+  }
+
+  if (input.assetSnapshot) {
+    const db = researchStore()
+    db.tokenProfiles.set(input.assetSnapshot.id, {
+      asset: input.assetSnapshot,
+      createdAt: new Date().toISOString(),
+    })
+    return input.assetSnapshot
+  }
 
   const query = input.query?.trim()
   if (!query) return (await getOrCreateTokenProfile("bitcoin")).asset
@@ -389,6 +410,7 @@ export async function resolveTokenForReport(input: { assetId?: string; query?: s
 export async function getOrCreateTokenReport(input: {
   assetId?: string
   query?: string
+  assetSnapshot?: Asset
   chainId?: number
   reportType?: TokenReport["reportType"]
 }): Promise<TokenReport> {

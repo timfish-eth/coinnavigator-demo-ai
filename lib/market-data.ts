@@ -335,9 +335,11 @@ function searchKnownAssets(normalizedQuery: string): Asset[] {
   if (!normalizedQuery) return []
   return knownSearchAssets
     .filter((asset) => {
+      const id = asset.id.toLowerCase()
       const symbol = asset.symbol.toLowerCase()
       const name = asset.name.toLowerCase()
-      return symbol.includes(normalizedQuery) ||
+      return id.includes(normalizedQuery) ||
+        symbol.includes(normalizedQuery) ||
         name.includes(normalizedQuery) ||
         asset.aliases.some((alias) => alias.includes(normalizedQuery))
     })

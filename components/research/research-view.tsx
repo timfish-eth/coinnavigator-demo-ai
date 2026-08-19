@@ -82,6 +82,11 @@ const popular = [
   { label: "RWA Projects", id: "ondo" },
 ]
 
+function appendAssetSnapshot(params: URLSearchParams, asset?: Asset) {
+  if (!asset) return
+  params.set("snapshot", JSON.stringify(asset))
+}
+
 export function ResearchView({ initialId, initialType, initialDate }: { initialId?: string; initialType?: ReportType; initialDate?: string }) {
   const { requireWallet, isConnected, isPro, openUpgrade, currentChainId } = useAuth()
   const preset = initialId ? assets.find((a) => a.id === initialId) : undefined
@@ -159,7 +164,10 @@ export function ResearchView({ initialId, initialType, initialDate }: { initialI
     try {
       const params = new URLSearchParams({ type: effectiveReportType, chainId: String(reportChainId) })
       if (input?.assetId) params.set("asset", input.assetId)
-      else if (input?.asset) params.set("asset", input.asset.id)
+      else if (input?.asset) {
+        params.set("asset", input.asset.id)
+        appendAssetSnapshot(params, input.asset)
+      }
       else params.set("q", searchTerm)
 
       const response = await fetch(`/api/research/token-report?${params.toString()}`)
