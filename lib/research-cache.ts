@@ -28,6 +28,9 @@ export type TokenReport = {
   inputs: {
     marketDataDate: string
     newsWindow: "24h"
+    tradingDataSource: string
+    newsCount: number
+    inputFingerprint: string
   }
 }
 
@@ -72,6 +75,13 @@ function withReportDefaults(report: StoredTokenReport): StoredTokenReport {
   return {
     ...report,
     chainId: normalizeReportChainId(report.chainId),
+    inputs: {
+      marketDataDate: report.inputs?.marketDataDate ?? report.generatedAt.slice(0, 10),
+      newsWindow: "24h",
+      tradingDataSource: report.inputs?.tradingDataSource ?? report.asset.source ?? "Market data",
+      newsCount: report.inputs?.newsCount ?? report.report.latestIntel.length,
+      inputFingerprint: report.inputs?.inputFingerprint ?? "LEGACY",
+    },
   }
 }
 
@@ -93,6 +103,36 @@ function impactFor(asset: Asset, newsIndex: number): Impact {
   if (newsIndex === 0 || asset.activity >= 80 || Math.abs(asset.change24h) >= 5) return "High"
   if (asset.activity >= 60 || Math.abs(asset.change24h) >= 2) return "Medium"
   return "Low"
+}
+
+function formatPrice(value: number): string {
+  if (!Number.isFinite(value) || value <= 0) return "-"
+  if (value >= 1) return `$${value.toLocaleString("en-US", { maximumFractionDigits: 2 })}`
+  return `$${value.toLocaleString("en-US", { maximumSignificantDigits: 4 })}`
+}
+
+function dailyInputFingerprint(asset: Asset, news: MarketAnalysis["report"]["news"], day: string): string {
+  const raw = [
+    day,
+    asset.id,
+    asset.price,
+    asset.change24h,
+    asset.marketCap,
+    asset.volume,
+    asset.rank,
+    ...news.slice(0, 6).map((item) => `${item.source}:${item.title}:${item.publishedAt ?? ""}`),
+  ].join("|")
+  let hash = 0
+  for (let i = 0; i < raw.length; i += 1) {
+    hash = (hash * 31 + raw.charCodeAt(i)) >>> 0
+  }
+  return hash.toString(36).toUpperCase().padStart(7, "0")
+}
+
+function dailyTradingSummary(asset: Asset, news: MarketAnalysis["report"]["news"], day: string): string {
+  const source = asset.source ?? "market data"
+  const change = `${asset.change24h >= 0 ? "+" : ""}${asset.change24h.toFixed(2)}%`
+  return `Daily trading snapshot (${day}) uses ${source} aggregate exchange-market data: spot price ${formatPrice(asset.price)}, 24h change ${change}, 24h volume ${asset.volume}, market cap ${asset.marketCap}, rank #${asset.rank}, and ${news.length} relevant 24h news item${news.length === 1 ? "" : "s"}.`
 }
 
 function sourceLabel(item: { source?: string; url?: string }, fallback: string): string {
@@ -130,8 +170,12 @@ function buildDataDrivenResearch(
   marketAnalysis: MarketAnalysis,
   news: MarketAnalysis["report"]["news"],
   reportType: TokenReport["reportType"] = "quick",
+  generatedAt = new Date(),
 ): Research {
   const base = getResearch(asset)
+  const day = dateKey(generatedAt)
+  const inputFingerprint = dailyInputFingerprint(asset, news, day)
+  const tradingSummary = dailyTradingSummary(asset, news, day)
   const narrative = marketAnalysis.narratives.find((item) => item.name === asset.category)
   const featured = marketAnalysis.featuredAssets.find((item) => item.id === asset.id)
   const volumeScore = clamp(asset.activity)
@@ -146,13 +190,13 @@ function buildDataDrivenResearch(
 
   const fullResearch: Research = {
     ...base,
-    overview: `${asset.name} is a ${asset.category} asset currently ranked #${asset.rank} by market capitalization. The profile is generated from live market data, category momentum and the latest daily news available to the app.`,
-    marketPosition: `${asset.name} trades with ${asset.volume} in 24h volume and ${asset.marketCap} market capitalization. Its ${asset.category} narrative score is ${sectorScore}, with average category movement of ${sectorChange >= 0 ? "+" : ""}${sectorChange.toFixed(2)}% over 24h.`,
+    overview: `${asset.name} is a ${asset.category} asset currently ranked #${asset.rank} by market capitalization. The ${day} profile is generated from aggregate exchange-market data, category momentum and the latest 24h news available to the app.`,
+    marketPosition: `${asset.name} trades at ${formatPrice(asset.price)} with ${asset.volume} in 24h volume and ${asset.marketCap} market capitalization. Its ${asset.category} narrative score is ${sectorScore}, with average category movement of ${sectorChange >= 0 ? "+" : ""}${sectorChange.toFixed(2)}% over 24h. ${tradingSummary}`,
     growthDrivers: featured?.strengths.length
       ? featured.strengths
       : [
-          `Rank #${asset.rank} market position`,
-          `${asset.volume} 24h trading volume`,
+          `${day} rank #${asset.rank} market position`,
+          `${asset.volume} 24h trading volume from ${asset.source ?? "market"} data`,
           `${asset.category} narrative score ${sectorScore}`,
           `${newsCount} relevant daily news item${newsCount === 1 ? "" : "s"} tracked`,
         ],
@@ -163,16 +207,25 @@ function buildDataDrivenResearch(
           asset.change24h < 0 ? "Negative 24h price momentum" : "Positive momentum can reverse quickly",
           "Research quality depends on available market and news coverage",
         ],
-    summary: `${asset.name} shows a ${asset.signal.toLowerCase()} near-term market signal, ${asset.risk.toLowerCase()} risk and an AI research score of ${overall}. The current read is driven by rank, 24h movement, volume/activity, sector narrative strength and daily news coverage. This is research information, not financial advice.`,
+    summary: `${asset.name} shows a ${asset.signal.toLowerCase()} near-term market signal, ${asset.risk.toLowerCase()} risk and an AI research score of ${overall} for ${day}. The current read is driven by aggregate exchange trading data, rank, 24h movement, volume/activity, sector narrative strength and daily news coverage. Daily input fingerprint: ${inputFingerprint}. This is research information, not financial advice.`,
     compositeScore,
     website: `www.coingecko.com/en/coins/${asset.id}`,
     fundamentals: [
       {
         title: "Market Snapshot",
-        description: `${asset.name} is ranked #${asset.rank} with ${asset.marketCap} market capitalization and ${asset.volume} 24h volume.`,
+        description: `${asset.name} is ranked #${asset.rank} with ${asset.marketCap} market capitalization, ${asset.volume} 24h volume and ${formatPrice(asset.price)} spot price on ${day}.`,
         details: [
           { label: "Source", value: asset.source ?? "Market data" },
+          { label: "Spot Price", value: formatPrice(asset.price) },
           { label: "24h Change", value: `${asset.change24h >= 0 ? "+" : ""}${asset.change24h.toFixed(2)}%` },
+        ],
+      },
+      {
+        title: "Daily Input Digest",
+        description: `This report is keyed to ${day} market and news inputs so the daily report changes when trading data or 24h news changes.`,
+        details: [
+          { label: "Input Fingerprint", value: inputFingerprint },
+          { label: "News Items", value: String(newsCount) },
         ],
       },
       {
@@ -198,14 +251,16 @@ function buildDataDrivenResearch(
       growth: sectorChange >= 1 ? "Expanding" : sectorChange <= -1 ? "Contracting" : "Stable",
     },
     performance: [
+      { label: "Price", value: Number(asset.price.toFixed(asset.price >= 1 ? 2 : 6)) },
       { label: "24H", value: Number(asset.change24h.toFixed(2)) },
       { label: "Narrative", value: Number(sectorChange.toFixed(2)) },
       { label: "AI Score", value: overall },
     ],
     marketInterest: [
+      { label: "Spot Price", value: formatPrice(asset.price), change: asset.change24h },
       { label: "24h Volume", value: asset.volume, change: asset.change24h },
-      { label: "Market Signal", value: asset.signal, change: momentumScore - 50 },
       { label: "News Coverage", value: `${newsCount} item${newsCount === 1 ? "" : "s"}`, change: newsCount * 2 },
+      { label: "Market Signal", value: asset.signal, change: momentumScore - 50 },
     ],
     riskScores: [
       { label: "Market Risk", level: asset.risk, note: "Derived from rank and 24h volatility" },
@@ -245,7 +300,7 @@ function buildDataDrivenResearch(
         ...fullResearch.fundamentals,
         {
           title: "Economic Context",
-          description: `${asset.name} should be evaluated against broad crypto liquidity, BTC dominance, risk appetite and the current ${asset.category} cycle.`,
+          description: `${asset.name} should be evaluated against broad crypto liquidity, BTC dominance, risk appetite and the current ${asset.category} cycle for ${day}.`,
           details: [
             { label: "Market Cap Cycle", value: marketAnalysis.report.metrics.totalMarketCap.value },
             { label: "BTC Dominance", value: marketAnalysis.report.metrics.btcDominance.value },
@@ -253,10 +308,19 @@ function buildDataDrivenResearch(
         },
         {
           title: "Financial Quality",
-          description: `Financial strength is proxied through market cap rank, trading volume depth, attention score and resilience under recent 24h market movement.`,
+          description: `Financial strength is proxied through market cap rank, trading volume depth, spot price movement, attention score and resilience under the latest 24h market movement.`,
           details: [
+            { label: "Spot Price", value: formatPrice(asset.price) },
             { label: "24h Volume", value: asset.volume },
             { label: "Liquidity Rank", value: `#${asset.rank}` },
+          ],
+        },
+        {
+          title: "News & Event Delta",
+          description: `Advanced research incorporates the latest 24h token-specific news set and market-wide fallback news when token-specific coverage is thin.`,
+          details: [
+            { label: "Daily Fingerprint", value: inputFingerprint },
+            { label: "News Window", value: "24h" },
           ],
         },
       ],
@@ -288,11 +352,33 @@ function buildDataDrivenResearch(
   return {
     ...fullResearch,
     fundamentals: fullResearch.fundamentals.slice(0, 2),
-    marketInterest: fullResearch.marketInterest.slice(0, 3),
+    marketInterest: [fullResearch.marketInterest[0], fullResearch.marketInterest[1], fullResearch.marketInterest[3]],
     riskScores: fullResearch.riskScores.slice(0, 3),
     onchain: fullResearch.onchain.slice(0, 2),
     social: fullResearch.social.slice(0, 2),
     latestIntel: fullResearch.latestIntel.slice(0, 2),
+  }
+}
+
+function ensureDailyContext(
+  report: Research,
+  asset: Asset,
+  news: MarketAnalysis["report"]["news"],
+  generatedAt: Date,
+): Research {
+  const day = dateKey(generatedAt)
+  const inputFingerprint = dailyInputFingerprint(asset, news, day)
+  const marker = `Daily input fingerprint: ${inputFingerprint}.`
+  const tradingSummary = dailyTradingSummary(asset, news, day)
+  const summary = report.summary.includes(inputFingerprint) ? report.summary : `${report.summary} ${marker}`
+  const marketPosition = report.marketPosition.includes(inputFingerprint)
+    ? report.marketPosition
+    : `${report.marketPosition} ${tradingSummary} ${marker}`
+
+  return {
+    ...report,
+    summary,
+    marketPosition,
   }
 }
 
@@ -319,7 +405,7 @@ export async function getDailyMarketAnalysis(): Promise<MarketAnalysis> {
 export async function getOrCreateTokenProfile(assetId: string): Promise<TokenProfile> {
   const db = researchStore()
   const cached = db.tokenProfiles.get(assetId)
-  if (cached) return cached
+  if (cached && dateKey(new Date(cached.createdAt)) === dateKey()) return cached
 
   const profile = {
     asset: await getMarketAsset(assetId),
@@ -457,7 +543,8 @@ export async function getOrCreateTokenReport(input: {
     const dailyAnalysis = await getDailyMarketAnalysis()
     const tokenNews = await getDailyTokenNews(asset)
     const reportNews = tokenNews.length ? tokenNews : dailyAnalysis.report.news
-    const baseResearch = buildDataDrivenResearch(asset, dailyAnalysis, reportNews, reportType)
+    const inputFingerprint = dailyInputFingerprint(asset, reportNews, dateKey(generatedAt))
+    const baseResearch = buildDataDrivenResearch(asset, dailyAnalysis, reportNews, reportType, generatedAt)
     let report = baseResearch
     try {
       const aiResearch = await generateResearchWithLlm({
@@ -475,6 +562,7 @@ export async function getOrCreateTokenReport(input: {
     } catch {
       report = baseResearch
     }
+    report = ensureDailyContext(report, asset, reportNews, generatedAt)
 
     const stored: StoredTokenReport = {
       id: key,
@@ -487,6 +575,9 @@ export async function getOrCreateTokenReport(input: {
       inputs: {
         marketDataDate: dateKey(generatedAt),
         newsWindow: "24h",
+        tradingDataSource: asset.source ?? "Market data",
+        newsCount: reportNews.length,
+        inputFingerprint,
       },
     }
     db.tokenReports.set(key, stored)
