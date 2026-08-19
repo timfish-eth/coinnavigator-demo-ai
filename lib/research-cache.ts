@@ -9,7 +9,7 @@ import { getDailyTokenNews } from "@/lib/token-news"
 const DAY_MS = 24 * 60 * 60 * 1000
 const REPORT_TTL_DAYS = 7
 const REPORT_TTL_MS = REPORT_TTL_DAYS * DAY_MS
-const TOKEN_REPORT_TEMPLATE_VERSION = "v3"
+const TOKEN_REPORT_TEMPLATE_VERSION = "v6"
 
 export type TokenProfile = {
   asset: Asset
@@ -133,6 +133,64 @@ function dailyTradingSummary(asset: Asset, news: MarketAnalysis["report"]["news"
   const source = asset.source ?? "market data"
   const change = `${asset.change24h >= 0 ? "+" : ""}${asset.change24h.toFixed(2)}%`
   return `Daily trading snapshot (${day}) uses ${source} aggregate exchange-market data: spot price ${formatPrice(asset.price)}, 24h change ${change}, 24h volume ${asset.volume}, market cap ${asset.marketCap}, rank #${asset.rank}, and ${news.length} relevant 24h news item${news.length === 1 ? "" : "s"}.`
+}
+
+function metricLine(label: string, value: string, change?: number): string {
+  if (typeof change !== "number") return `${label}: ${value}`
+  return `${label}: ${value} (${change >= 0 ? "+" : ""}${change.toFixed(2)}% 24h)`
+}
+
+function marketReportFundamentals(marketAnalysis: MarketAnalysis, news: MarketAnalysis["report"]["news"], generatedAt: Date) {
+  const report = marketAnalysis.report
+  const metrics = report.metrics
+  const day = dateKey(generatedAt)
+  return [
+    {
+      title: "Daily Market Report",
+      description: `${report.thesis} ${report.summary}`,
+      details: [
+        { label: "Report Date", value: day },
+        { label: "Source", value: report.source },
+      ],
+    },
+    {
+      title: "Global Liquidity Dashboard",
+      description: "Public market data is used to frame whether token-specific signals are supported by broader exchange liquidity and major-asset direction.",
+      details: [
+        { label: "BTC", value: metricLine(metrics.btcPrice.label, metrics.btcPrice.value, metrics.btcPrice.change) },
+        { label: "ETH", value: metricLine(metrics.ethPrice.label, metrics.ethPrice.value, metrics.ethPrice.change) },
+        { label: "Market Cap", value: metricLine(metrics.totalMarketCap.label, metrics.totalMarketCap.value, metrics.totalMarketCap.change) },
+        { label: "24h Volume", value: metrics.volume24h.value },
+        { label: "BTC Dominance", value: metrics.btcDominance.value },
+      ],
+    },
+    {
+      title: "Open Market Findings",
+      description: report.keyFindings.join(" "),
+      details: report.keyFindings.slice(0, 4).map((finding, index) => ({
+        label: `Finding ${index + 1}`,
+        value: finding,
+      })),
+    },
+    {
+      title: "Market Risk Brief",
+      description: report.risks.join(" "),
+      details: report.risks.slice(0, 4).map((risk, index) => ({
+        label: `Risk ${index + 1}`,
+        value: risk,
+      })),
+    },
+    {
+      title: "Token News Tape",
+      description: news.length
+        ? "The advanced report includes the latest token-specific 24h news tape, with broad market news used as fallback when token coverage is thin."
+        : "No token-specific 24h news was available, so the report relies more heavily on market data and global crypto news.",
+      details: news.slice(0, 4).map((item, index) => ({
+        label: item.source || `News ${index + 1}`,
+        value: item.title,
+      })),
+    },
+  ]
 }
 
 function sourceLabel(item: { source?: string; url?: string }, fallback: string): string {
@@ -363,22 +421,92 @@ function buildDataDrivenResearch(
 function ensureDailyContext(
   report: Research,
   asset: Asset,
+  marketAnalysis: MarketAnalysis,
   news: MarketAnalysis["report"]["news"],
   generatedAt: Date,
+  reportType: TokenReport["reportType"],
 ): Research {
   const day = dateKey(generatedAt)
   const inputFingerprint = dailyInputFingerprint(asset, news, day)
   const marker = `Daily input fingerprint: ${inputFingerprint}.`
   const tradingSummary = dailyTradingSummary(asset, news, day)
+  const marketReport = marketAnalysis.report
+  const marketMetrics = marketReport.metrics
+  const deepFundamentals = reportType === "deep" ? marketReportFundamentals(marketAnalysis, news, generatedAt) : []
   const summary = report.summary.includes(inputFingerprint) ? report.summary : `${report.summary} ${marker}`
   const marketPosition = report.marketPosition.includes(inputFingerprint)
     ? report.marketPosition
-    : `${report.marketPosition} ${tradingSummary} ${marker}`
+    : `${report.marketPosition} ${tradingSummary} ${reportType === "deep" ? marketReport.summary : ""} ${marker}`
+  const hasDailyDigest = report.fundamentals.some((item) => item.title === "Daily Input Digest")
+  const hasNewsDelta = report.fundamentals.some((item) => item.title === "News & Event Delta")
+  const fundamentals = [
+    ...report.fundamentals,
+    ...deepFundamentals.filter((item) => !report.fundamentals.some((existing) => existing.title === item.title)),
+    ...(!hasDailyDigest
+      ? [{
+          title: "Daily Input Digest",
+          description: `This report is keyed to ${day} market and news inputs so the daily report changes when trading data or 24h news changes.`,
+          details: [
+            { label: "Input Fingerprint", value: inputFingerprint },
+            { label: "News Items", value: String(news.length) },
+          ],
+        }]
+      : []),
+    ...(reportType === "deep" && !hasNewsDelta
+      ? [{
+          title: "News & Event Delta",
+          description: "Advanced research incorporates the latest 24h token-specific news set and market-wide fallback news when token-specific coverage is thin.",
+          details: [
+            { label: "Daily Fingerprint", value: inputFingerprint },
+            { label: "News Window", value: "24h" },
+          ],
+        }]
+      : []),
+  ]
+  const growthDrivers = reportType === "deep"
+    ? [
+        ...report.growthDrivers,
+        ...marketReport.keyFindings.slice(0, 3).filter((finding) => !report.growthDrivers.includes(finding)),
+      ]
+    : report.growthDrivers
+  const risks = reportType === "deep"
+    ? [
+        ...report.risks,
+        ...marketReport.risks.filter((risk) => !report.risks.includes(risk)),
+      ]
+    : report.risks
+  const marketInterest = reportType === "deep"
+    ? [
+        ...report.marketInterest,
+        { label: "BTC Price", value: marketMetrics.btcPrice.value, change: marketMetrics.btcPrice.change ?? 0 },
+        { label: "ETH Price", value: marketMetrics.ethPrice.value, change: marketMetrics.ethPrice.change ?? 0 },
+        { label: "Total Market Cap", value: marketMetrics.totalMarketCap.value, change: marketMetrics.totalMarketCap.change ?? 0 },
+        { label: "Global 24h Volume", value: marketMetrics.volume24h.value, change: 0 },
+        { label: "BTC Dominance", value: marketMetrics.btcDominance.value, change: 0 },
+      ].filter((item, index, items) => items.findIndex((candidate) => candidate.label === item.label) === index)
+    : report.marketInterest
+  const riskScores = reportType === "deep"
+    ? [
+        ...report.riskScores,
+        { label: "Market Backdrop Risk", level: riskLevel(65 + (marketMetrics.totalMarketCap.change ?? 0) * 4), note: marketReport.thesis },
+        { label: "BTC Liquidity Risk", level: (marketMetrics.btcPrice.change ?? 0) < -2 ? "High" as const : "Medium" as const, note: "BTC direction and dominance can constrain altcoin liquidity." },
+        { label: "ETH Beta Risk", level: (marketMetrics.ethPrice.change ?? 0) < -2 ? "High" as const : "Medium" as const, note: "Weak ETH performance can pressure smart-contract and DeFi beta." },
+      ].filter((item, index, items) => items.findIndex((candidate) => candidate.label === item.label) === index)
+    : report.riskScores
+  const latestIntel = reportType === "deep"
+    ? newsIntel(asset, [...news, ...marketReport.news]).slice(0, 6)
+    : report.latestIntel
 
   return {
     ...report,
     summary,
     marketPosition,
+    fundamentals,
+    growthDrivers,
+    risks,
+    marketInterest,
+    riskScores,
+    latestIntel,
   }
 }
 
@@ -562,7 +690,7 @@ export async function getOrCreateTokenReport(input: {
     } catch {
       report = baseResearch
     }
-    report = ensureDailyContext(report, asset, reportNews, generatedAt)
+    report = ensureDailyContext(report, asset, dailyAnalysis, reportNews, generatedAt, reportType)
 
     const stored: StoredTokenReport = {
       id: key,

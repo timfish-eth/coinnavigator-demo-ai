@@ -105,6 +105,8 @@ export function ResearchView({ initialId, initialType, initialDate }: { initialI
   const searchRef = useRef<HTMLInputElement>(null)
   const trimmedQuery = query.trim()
   const reportChainId = normalizeReportChainId(currentChainId)
+  const displayedReportType = tokenReport?.reportType ?? lastType
+  const hasPendingReportType = status === "done" && Boolean(selectedAsset) && displayedReportType !== reportType
   const selectedHistory = useMemo(() => {
     if (!selectedAsset) return []
     return history.filter((record) => record.assetId === selectedAsset.id && normalizeReportChainId(record.chainId) === reportChainId)
@@ -178,6 +180,8 @@ export function ResearchView({ initialId, initialType, initialDate }: { initialI
       setSelectedAsset(data.asset)
       setSearchOpen(false)
       setTokenReport(data)
+      setReportType(data.reportType)
+      setLastType(data.reportType)
       setStep(loadingSteps.length)
       setStatus("done")
       upsertReport({
@@ -209,14 +213,14 @@ export function ResearchView({ initialId, initialType, initialDate }: { initialI
     openUpgrade()
   }
 
-  function guardedGenerate(target?: Asset) {
+  function guardedGenerate(target?: Asset, targetReportType = reportType) {
     const targetAsset = target ?? selectedAsset
     if (!targetAsset) {
       setSearchOpen(true)
       searchRef.current?.focus()
       return
     }
-    requireWallet(() => runProOnly(() => void generate({ asset: targetAsset })), "report")
+    requireWallet(() => runProOnly(() => void generate({ asset: targetAsset, reportType: targetReportType })), "report")
   }
 
   function chooseSearchResult(result: Asset) {
@@ -391,7 +395,7 @@ export function ResearchView({ initialId, initialType, initialDate }: { initialI
                 }}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && !e.nativeEvent.isComposing && e.keyCode !== 229) {
-                    if (selectedAsset) guardedGenerate()
+                    if (selectedAsset) guardedGenerate(undefined, reportType)
                     else setSearchOpen(true)
                   }
                 }}
@@ -432,7 +436,7 @@ export function ResearchView({ initialId, initialType, initialDate }: { initialI
               )}
             </div>
             <button
-              onClick={() => guardedGenerate()}
+              onClick={() => guardedGenerate(undefined, reportType)}
               disabled={status === "loading" || !selectedAsset}
               className={cn(buttonVariants({ size: "lg" }), "h-12 shrink-0 bg-primary px-6 text-primary-foreground hover:bg-primary/90")}
             >
@@ -603,7 +607,7 @@ export function ResearchView({ initialId, initialType, initialDate }: { initialI
             description="Generate your first AI-powered crypto research report."
             action={
               <button
-                onClick={() => guardedGenerate()}
+                onClick={() => guardedGenerate(undefined, reportType)}
                 className={cn(buttonVariants({ size: "lg" }), "bg-primary text-primary-foreground hover:bg-primary/90")}
               >
                 <Sparkles className="size-4" /> Generate Report
@@ -617,6 +621,25 @@ export function ResearchView({ initialId, initialType, initialDate }: { initialI
       {/* Section 3 - Generated report */}
       {status === "done" && asset && (
         <>
+          {hasPendingReportType && selectedAsset && (
+            <Panel className="flex flex-col gap-3 border-primary/30 bg-primary/5 p-4 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-sm font-semibold text-foreground">
+                  {reportType === "deep" ? "Advanced Research" : "Quick Analysis"} is selected
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  The report shown below is still {displayedReportType === "deep" ? "Advanced Research" : "Quick Analysis"}.
+                </p>
+              </div>
+              <button
+                onClick={() => guardedGenerate(selectedAsset, reportType)}
+                className={cn(buttonVariants({ size: "sm" }), "shrink-0 bg-primary text-primary-foreground hover:bg-primary/90")}
+              >
+                <Sparkles className="size-3.5" />
+                Generate {reportType === "deep" ? "Advanced Research" : "Quick Analysis"}
+              </button>
+            </Panel>
+          )}
           <div className="grid gap-6 lg:grid-cols-[1fr_240px]">
             <div className="min-w-0">
               <Report asset={asset} reportType={lastType} tokenReport={tokenReport} />
