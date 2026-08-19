@@ -51,8 +51,16 @@ const config: HardhatUserConfig = {
     artifacts: "./artifacts",
   },
   etherscan: {
-    apiKey: process.env.ETHERSCAN_API_KEY ?? "",
+    apiKey: process.env.ETHERSCAN_API_KEY ?? process.env.BSCSCAN_API_KEY ?? "",
     customChains: [
+      {
+        network: "bsc",
+        chainId: 56,
+        urls: {
+          apiURL: "https://api.etherscan.io/v2/api",
+          browserURL: "https://bscscan.com",
+        },
+      },
       {
         network: "bscTestnet",
         chainId: 97,
