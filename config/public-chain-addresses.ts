@@ -2,7 +2,20 @@ import type { Address } from "viem"
 import { bsc, bscTestnet } from "wagmi/chains"
 
 export const PUBLIC_CHAIN_FEATURES = {
-  enableBscTestnet: true,
+  enableBscTestnet: false,
+} as const
+
+export const PUBLIC_CHAIN_RPC_URLS = {
+  BSC: [
+    "https://bsc-dataseed.bnbchain.org",
+    "https://bsc-dataseed-public.bnbchain.org",
+    "https://bsc-dataseed.nariox.org",
+  ],
+  BSC_TESTNET: [
+    "https://data-seed-prebsc-1-s1.bnbchain.org:8545",
+    "https://data-seed-prebsc-2-s1.bnbchain.org:8545",
+    "https://data-seed-prebsc-1-s2.bnbchain.org:8545",
+  ],
 } as const
 
 export const PUBLIC_CHAIN_ADDRESSES = {
