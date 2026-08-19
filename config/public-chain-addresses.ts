@@ -2,7 +2,7 @@ import type { Address } from "viem"
 import { bsc, bscTestnet } from "wagmi/chains"
 
 export const PUBLIC_CHAIN_FEATURES = {
-  enableBscTestnet: false,
+  enableBscTestnet: true,
 } as const
 
 export const PUBLIC_CHAIN_RPC_URLS = {
