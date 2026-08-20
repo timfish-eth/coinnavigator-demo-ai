@@ -6,6 +6,7 @@ import { ChangeBadge, RiskPill, TokenAvatar } from "@/components/primitives"
 import { buttonVariants } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/components/auth/auth-context"
+import { beijingDateKey, formatBeijingRefreshTime } from "@/lib/beijing-day"
 import { aiSignal, assets, getAsset, getResearch, type Asset, type RiskLevel } from "@/lib/data"
 import { normalizeReportChainId, reportNetworkLabel } from "@/lib/report-network"
 import type { TokenReport } from "@/lib/research-cache"
@@ -188,6 +189,7 @@ export function ResearchView({ initialId, initialType, initialDate }: { initialI
         asset: data.asset,
         chainId: data.chainId,
         reportType: data.reportType,
+        reportDay: data.inputs.marketDataDate,
         generatedAt: data.generatedAt,
         expiresAt: data.expiresAt,
       })
@@ -249,7 +251,7 @@ export function ResearchView({ initialId, initialType, initialDate }: { initialI
         type: record.reportType,
         chainId: String(record.chainId),
         cache: "only",
-        date: record.generatedAt.slice(0, 10),
+        date: record.reportDay ?? beijingDateKey(new Date(record.generatedAt)),
       })
       const response = await fetch(`/api/research/token-report?${params.toString()}`)
       if (!response.ok) throw new Error(`Cached report API responded ${response.status}`)
@@ -287,7 +289,7 @@ export function ResearchView({ initialId, initialType, initialDate }: { initialI
   async function downloadHistory(record: StoredReportRecord) {
     requireWallet(() => runProOnly(() => {
       void (async () => {
-        const params = new URLSearchParams({ asset: record.assetId, type: record.reportType, chainId: String(record.chainId), date: record.generatedAt.slice(0, 10) })
+        const params = new URLSearchParams({ asset: record.assetId, type: record.reportType, chainId: String(record.chainId), date: record.reportDay ?? beijingDateKey(new Date(record.generatedAt)) })
         const response = await fetch(`/api/research/token-report/pdf?${params.toString()}`)
         if (!response.ok) return
         const blob = await response.blob()
@@ -728,7 +730,8 @@ function Report({
         <div className="mt-4 grid grid-cols-2 gap-4 border-t border-border pt-4 text-xs sm:grid-cols-4">
           <Meta label="Report Type" value={reportTypeLabel[reportType]} />
           <Meta label="Network" value={reportNetworkLabel(reportChainId)} />
-          <Meta label="Generated" value={tokenReport ? new Date(tokenReport.generatedAt).toLocaleString("en-US") : "Today"} />
+          <Meta label="Generated" value={tokenReport ? new Date(tokenReport.generatedAt).toLocaleString("en-US", { timeZone: "Asia/Shanghai" }) : "Today"} />
+          <Meta label="Next Refresh" value={formatBeijingRefreshTime()} />
           <Meta label="Data Sources" value={tokenReport?.cacheStatus === "hit" ? "Cached report" : "Market data + news"} />
           <Meta label="Coverage" value={isDeep ? "Market / Macro / Financial / Risk" : "Summary / Market / Risk"} />
         </div>

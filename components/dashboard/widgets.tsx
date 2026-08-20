@@ -6,6 +6,7 @@ import { TokenAvatar } from "@/components/primitives"
 import { getAsset, keyInsights, marketBrief, marketMood, narratives, researchUpdates, type Impact } from "@/lib/data"
 import type { ComputedInsight } from "@/lib/ai-analysis"
 import type { MarketResearchReport } from "@/lib/market-data"
+import { formatBeijingRefreshTime } from "@/lib/beijing-day"
 import { cn } from "@/lib/utils"
 import { ArrowRight, ArrowUpRight, Compass, FileText, Lightbulb, Sparkles } from "lucide-react"
 import { useEffect, useState } from "react"
@@ -81,7 +82,7 @@ export function DailyBrief() {
           </div>
         </div>
         <span className="text-xs text-muted-foreground">
-          {loading ? "Loading market data..." : report ? `${report.source} · updated now` : marketBrief.updated}
+          {loading ? "Loading market data..." : report ? `${report.source} · Next refresh: ${formatBeijingRefreshTime(new Date(report.nextRefreshAt))}` : marketBrief.updated}
         </span>
       </div>
 

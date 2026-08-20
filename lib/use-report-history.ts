@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useSyncExternalStore } from "react"
 import type { Asset } from "@/lib/data"
+import { beijingDateKey } from "@/lib/beijing-day"
 import { DEFAULT_REPORT_CHAIN_ID, normalizeReportChainId } from "@/lib/report-network"
 
 const STORAGE_KEY = "coinnavigator.research.history"
@@ -20,6 +21,7 @@ export type StoredReportRecord = {
   color: string
   imageUrl?: string
   reportType: StoredReportType
+  reportDay?: string
   generatedAt: string
   expiresAt: string
 }
@@ -102,10 +104,11 @@ export function useReportHistory() {
     pruneExpiredRecords()
   }, [])
 
-  const upsertReport = useCallback((input: { asset: Asset; chainId: number; reportType: StoredReportType; generatedAt: string; expiresAt: string }) => {
+  const upsertReport = useCallback((input: { asset: Asset; chainId: number; reportType: StoredReportType; generatedAt: string; expiresAt: string; reportDay?: string }) => {
     const current = parseRecords(getSnapshot())
     const chainId = normalizeReportChainId(input.chainId)
-    const id = `chain-${chainId}:${input.asset.id}:${input.reportType}:${input.generatedAt.slice(0, 10)}`
+    const reportDay = input.reportDay ?? beijingDateKey(new Date(input.generatedAt))
+    const id = `chain-${chainId}:${input.asset.id}:${input.reportType}:${reportDay}`
     const nextRecord: StoredReportRecord = {
       id,
       assetId: input.asset.id,
@@ -115,6 +118,7 @@ export function useReportHistory() {
       color: input.asset.color,
       imageUrl: input.asset.imageUrl,
       reportType: input.reportType,
+      reportDay,
       generatedAt: input.generatedAt,
       expiresAt: input.expiresAt,
     }

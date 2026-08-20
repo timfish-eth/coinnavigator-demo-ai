@@ -2,6 +2,7 @@ import { mkdir, readFile, rename, writeFile } from "fs/promises"
 import path from "path"
 
 import type { Asset } from "@/lib/data"
+import { beijingDateKey } from "@/lib/beijing-day"
 import type { MarketNewsItem } from "@/lib/market-data"
 
 const NEWS_STORAGE_ROOT = path.join(process.cwd(), "storage", "news")
@@ -52,7 +53,7 @@ function newsState(): NewsState {
 }
 
 function dateKey(date = new Date()): string {
-  return date.toISOString().slice(0, 10)
+  return beijingDateKey(date)
 }
 
 function safeFileKey(key: string): string {
@@ -96,7 +97,7 @@ async function requestJson<T>(url: URL): Promise<T> {
       headers: {
         Accept: "application/json",
       },
-      next: { revalidate: 300 },
+      cache: "no-store",
     })
     if (!response.ok) throw new Error(`News API responded ${response.status}`)
     return await response.json() as T
@@ -114,7 +115,7 @@ async function requestText(url: URL): Promise<string> {
       headers: {
         Accept: "application/rss+xml,text/xml,text/plain",
       },
-      next: { revalidate: 300 },
+      cache: "no-store",
     })
     if (!response.ok) throw new Error(`News feed responded ${response.status}`)
     return await response.text()

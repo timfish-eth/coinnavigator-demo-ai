@@ -1,4 +1,5 @@
 import { assets as fallbackAssets, type Asset, type Trend } from "@/lib/data"
+import { beijingDateKey, cacheExpiresAtNextBeijingRefresh, nextBeijingRefreshAt } from "@/lib/beijing-day"
 import { execFile } from "node:child_process"
 import { promisify } from "node:util"
 
@@ -27,6 +28,8 @@ export type MarketNewsItem = {
 export type MarketResearchReport = {
   source: MarketDataSource
   updatedAt: string
+  marketDataDate: string
+  nextRefreshAt: string
   metrics: {
     btcPrice: MarketMetric
     ethPrice: MarketMetric
@@ -64,6 +67,24 @@ type CoinGeckoSearchCoin = {
 
 type CoinGeckoSearch = {
   coins?: CoinGeckoSearchCoin[]
+}
+
+type CoinGeckoCoinDetail = {
+  id: string
+  symbol: string
+  name: string
+  image?: {
+    thumb?: string
+    small?: string
+    large?: string
+  }
+  market_cap_rank?: number
+  market_data?: {
+    current_price?: Record<string, number>
+    market_cap?: Record<string, number>
+    total_volume?: Record<string, number>
+    price_change_percentage_24h?: number
+  }
 }
 
 type CoinMarketCapListing = {
@@ -135,6 +156,7 @@ type CryptoPanicResponse = {
 
 const TOP_ASSET_LIMIT = 100
 const SEARCH_ASSET_LIMIT = 20
+const SEARCH_DETAIL_FALLBACK_LIMIT = 5
 const cacheTtlMs = 60_000
 let cachedTopAssets: { expiresAt: number; data: TopAssetsResult } | undefined
 const cachedSearchAssets = new Map<string, { expiresAt: number; data: TopAssetsResult }>()
@@ -178,7 +200,7 @@ async function requestJson<T>(url: URL, headers: Record<string, string> = {}): P
   try {
     const response = await fetch(url, {
       headers,
-      next: { revalidate: 60 },
+      cache: "no-store",
     })
     if (!response.ok) throw new Error(`HTTP ${response.status}`)
     return await response.json() as T
@@ -495,6 +517,36 @@ async function fetchCoinGeckoMarketsBySymbol(symbol: string): Promise<Asset[]> {
   )
 }
 
+async function fetchCoinGeckoAssetById(id: string): Promise<Asset | undefined> {
+  const url = new URL(`https://api.coingecko.com/api/v3/coins/${encodeURIComponent(id)}`)
+  url.searchParams.set("localization", "false")
+  url.searchParams.set("tickers", "false")
+  url.searchParams.set("market_data", "true")
+  url.searchParams.set("community_data", "false")
+  url.searchParams.set("developer_data", "false")
+  url.searchParams.set("sparkline", "false")
+
+  const headers: Record<string, string> = {}
+  const apiKey = process.env.COINGECKO_API_KEY
+  if (apiKey) headers["x-cg-demo-api-key"] = apiKey
+
+  const coin = await requestJson<CoinGeckoCoinDetail>(url, headers)
+  if (!coin.id || !coin.symbol || !coin.name) return undefined
+
+  return mapAsset({
+    id: coin.id,
+    symbol: coin.symbol,
+    name: coin.name,
+    rank: coin.market_cap_rank,
+    price: coin.market_data?.current_price?.usd,
+    marketCap: coin.market_data?.market_cap?.usd,
+    volume: coin.market_data?.total_volume?.usd,
+    change24h: coin.market_data?.price_change_percentage_24h,
+    imageUrl: coin.image?.large ?? coin.image?.small ?? coin.image?.thumb,
+    source: "CoinGecko",
+  })
+}
+
 async function fetchCoinGeckoSearchAssets(query: string): Promise<TopAssetsResult> {
   const url = new URL("https://api.coingecko.com/api/v3/search")
   url.searchParams.set("query", query)
@@ -511,6 +563,13 @@ async function fetchCoinGeckoSearchAssets(query: string): Promise<TopAssetsResul
 
   const marketAssets = await fetchCoinGeckoMarketsByIds(coins.map((coin) => coin.id)).catch(() => [])
   const byId = new Map(marketAssets.map((asset) => [asset.id, asset]))
+  if (marketAssets.length > 0) {
+    const missingCoins = coins.filter((coin) => !byId.has(coin.id)).slice(0, SEARCH_DETAIL_FALLBACK_LIMIT)
+    const detailAssets = await Promise.all(missingCoins.map((coin) => fetchCoinGeckoAssetById(coin.id).catch(() => undefined)))
+    for (const asset of detailAssets) {
+      if (asset) byId.set(asset.id, asset)
+    }
+  }
   const assets = coins.map((coin) => {
     const marketAsset = byId.get(coin.id)
     if (marketAsset) return marketAsset
@@ -638,6 +697,7 @@ export async function getMarketResearchReport(): Promise<MarketResearchReport> {
   const btcDominance = global?.market_cap_percentage?.btc
   const rawNews = await fetchMarketNews(topAssets.assets.map((asset) => asset.id))
   const news = rawNews.length ? rawNews : syntheticNews(btc, eth, marketCapChange, btcDominance)
+  const day = beijingDateKey()
 
   const riskOn = (marketCapChange ?? 0) >= 0 && btc.change24h >= -1 && eth.change24h >= -1
   const ethLeadership = eth.change24h > btc.change24h
@@ -654,6 +714,8 @@ export async function getMarketResearchReport(): Promise<MarketResearchReport> {
   return {
     source: topAssets.source,
     updatedAt: new Date().toISOString(),
+    marketDataDate: day,
+    nextRefreshAt: nextBeijingRefreshAt().toISOString(),
     metrics: {
       btcPrice: { label: "BTC Price", value: compactCurrency(btc.price), change: btc.change24h },
       ethPrice: { label: "ETH Price", value: compactCurrency(eth.price), change: eth.change24h },
@@ -664,7 +726,7 @@ export async function getMarketResearchReport(): Promise<MarketResearchReport> {
     thesis: riskOn
       ? "The market backdrop is constructive but still dependent on BTC and ETH liquidity confirmation."
       : "The market backdrop is cautious, with broad direction still tied to BTC and ETH price stability.",
-    summary: `BTC at ${compactCurrency(btc.price)} and ETH at ${compactCurrency(eth.price)} define the current market tone. Total market capitalization is ${compactCurrency(totalMarketCap)} with ${compactCurrency(volume24h)} in 24h volume. ${dominanceTone}. ${ethLeadership ? "ETH is outperforming BTC over 24h, which can support broader altcoin research." : "BTC is leading or holding up better than ETH, so risk appetite should be evaluated carefully before rotating into smaller assets."}`,
+    summary: `Beijing trading day ${day}: BTC at ${compactCurrency(btc.price)} and ETH at ${compactCurrency(eth.price)} define the current market tone. Total market capitalization is ${compactCurrency(totalMarketCap)} with ${compactCurrency(volume24h)} in 24h volume. ${dominanceTone}. ${ethLeadership ? "ETH is outperforming BTC over 24h, which can support broader altcoin research." : "BTC is leading or holding up better than ETH, so risk appetite should be evaluated carefully before rotating into smaller assets."}`,
     keyFindings,
     risks: [
       "A drop in BTC price or rising BTC dominance can reduce liquidity for mid-cap tokens.",
@@ -681,7 +743,7 @@ export async function getTopAssets(): Promise<TopAssetsResult> {
   try {
     const cmc = await fetchCoinMarketCapTopAssets()
     if (cmc) {
-      cachedTopAssets = { data: cmc, expiresAt: Date.now() + cacheTtlMs }
+      cachedTopAssets = { data: cmc, expiresAt: cacheExpiresAtNextBeijingRefresh(cacheTtlMs) }
       return cmc
     }
   } catch {
@@ -690,7 +752,7 @@ export async function getTopAssets(): Promise<TopAssetsResult> {
 
   try {
     const gecko = await fetchCoinGeckoTopAssets()
-    cachedTopAssets = { data: gecko, expiresAt: Date.now() + cacheTtlMs }
+    cachedTopAssets = { data: gecko, expiresAt: cacheExpiresAtNextBeijingRefresh(cacheTtlMs) }
     return gecko
   } catch {
     const demo: TopAssetsResult = {
@@ -698,7 +760,7 @@ export async function getTopAssets(): Promise<TopAssetsResult> {
       source: "Demo",
       updatedAt: new Date().toISOString(),
     }
-    cachedTopAssets = { data: demo, expiresAt: Date.now() + cacheTtlMs }
+    cachedTopAssets = { data: demo, expiresAt: cacheExpiresAtNextBeijingRefresh(cacheTtlMs) }
     return demo
   }
 }
@@ -788,6 +850,13 @@ export async function getMarketAsset(id: string): Promise<Asset> {
     if (asset) return asset
   } catch {
     // Fall through to first available asset when the external lookup fails.
+  }
+
+  try {
+    const asset = await fetchCoinGeckoAssetById(id)
+    if (asset) return asset
+  } catch {
+    // Fall through to external search when direct market detail is unavailable.
   }
 
   try {

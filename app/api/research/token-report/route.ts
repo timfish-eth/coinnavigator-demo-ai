@@ -52,7 +52,7 @@ export async function GET(request: NextRequest) {
     }
     return NextResponse.json(cached, {
       headers: {
-        "Cache-Control": "public, max-age=3600",
+        "Cache-Control": "no-store",
       },
     })
   }
@@ -60,7 +60,7 @@ export async function GET(request: NextRequest) {
   const report = await getOrCreateTokenReport({ assetId, query, assetSnapshot, chainId, reportType })
   return NextResponse.json(report, {
     headers: {
-      "Cache-Control": "public, max-age=3600",
+      "Cache-Control": "no-store",
     },
   })
 }

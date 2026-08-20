@@ -1,4 +1,5 @@
 import { getMarketAnalysis, type MarketAnalysis } from "@/lib/ai-analysis"
+import { beijingDateKey, nextBeijingRefreshAt } from "@/lib/beijing-day"
 import { getResearch, type Asset, type Impact, type Research, type RiskLevel } from "@/lib/data"
 import { generateResearchWithLlm } from "@/lib/llm"
 import { getMarketAsset, searchMarketAssets } from "@/lib/market-data"
@@ -8,8 +9,7 @@ import { getDailyTokenNews } from "@/lib/token-news"
 
 const DAY_MS = 24 * 60 * 60 * 1000
 const REPORT_TTL_DAYS = 7
-const REPORT_TTL_MS = REPORT_TTL_DAYS * DAY_MS
-const TOKEN_REPORT_TEMPLATE_VERSION = "v6"
+const TOKEN_REPORT_TEMPLATE_VERSION = "v7"
 
 export type TokenProfile = {
   asset: Asset
@@ -60,7 +60,7 @@ function researchStore(): ResearchStore {
 }
 
 function dateKey(date = new Date()): string {
-  return date.toISOString().slice(0, 10)
+  return beijingDateKey(date)
 }
 
 function reportKey(chainId: number, assetId: string, reportType: TokenReport["reportType"], day = dateKey()): string {
@@ -434,9 +434,12 @@ function ensureDailyContext(
   const marketMetrics = marketReport.metrics
   const deepFundamentals = reportType === "deep" ? marketReportFundamentals(marketAnalysis, news, generatedAt) : []
   const summary = report.summary.includes(inputFingerprint) ? report.summary : `${report.summary} ${marker}`
-  const marketPosition = report.marketPosition.includes(inputFingerprint)
+  const marketPositionBase = report.marketPosition.includes(tradingSummary)
     ? report.marketPosition
-    : `${report.marketPosition} ${tradingSummary} ${reportType === "deep" ? marketReport.summary : ""} ${marker}`
+    : `${report.marketPosition} ${tradingSummary}`
+  const marketPosition = marketPositionBase.includes(inputFingerprint)
+    ? marketPositionBase
+    : `${marketPositionBase} ${reportType === "deep" ? marketReport.summary : ""} ${marker}`
   const hasDailyDigest = report.fundamentals.some((item) => item.title === "Daily Input Digest")
   const hasNewsDelta = report.fundamentals.some((item) => item.title === "News & Event Delta")
   const fundamentals = [
@@ -699,7 +702,7 @@ export async function getOrCreateTokenReport(input: {
       chainId,
       reportType,
       generatedAt: generatedAt.toISOString(),
-      expiresAt: new Date(generatedAt.getTime() + REPORT_TTL_MS).toISOString(),
+      expiresAt: new Date(nextBeijingRefreshAt(generatedAt).getTime() + (REPORT_TTL_DAYS - 1) * DAY_MS).toISOString(),
       inputs: {
         marketDataDate: dateKey(generatedAt),
         newsWindow: "24h",

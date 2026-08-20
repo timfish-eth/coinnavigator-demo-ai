@@ -20,6 +20,8 @@ type SearchMarketResponse = MarketResponse & {
   query: string
 }
 
+const MARKET_REFRESH_MS = 5 * 60 * 1000
+
 // Short "why trending" reason per asset, sourced from the featured list.
 const whyTrendingMap: Record<string, string> = Object.fromEntries(
   featuredAssets.map((f) => [f.id, f.whyTrending]),
@@ -46,7 +48,8 @@ export function MarketView() {
 
   useEffect(() => {
     let cancelled = false
-    async function loadMarket() {
+    async function loadMarket(showLoading = false) {
+      if (showLoading) setLoading(true)
       try {
         const response = await fetch("/api/market/top100")
         if (!response.ok) throw new Error(`Market API responded ${response.status}`)
@@ -65,9 +68,14 @@ export function MarketView() {
       }
     }
 
-    void loadMarket()
+    void loadMarket(true)
+    const interval = window.setInterval(() => {
+      void loadMarket()
+    }, MARKET_REFRESH_MS)
+
     return () => {
       cancelled = true
+      window.clearInterval(interval)
     }
   }, [])
 
